@@ -1,0 +1,564 @@
+diff --git a/node_modules/@shopify/react-native-skia/android/cpp/rnskia-android/RNSkAndroidVideo.cpp b/node_modules/@shopify/react-native-skia/android/cpp/rnskia-android/RNSkAndroidVideo.cpp
+index e4608b3..8e5ad79 100644
+--- a/node_modules/@shopify/react-native-skia/android/cpp/rnskia-android/RNSkAndroidVideo.cpp
++++ b/node_modules/@shopify/react-native-skia/android/cpp/rnskia-android/RNSkAndroidVideo.cpp
+@@ -35,7 +35,26 @@ RNSkAndroidVideo::RNSkAndroidVideo(jni::global_ref<jobject> jniVideo)
+ #endif
+ }
+ 
+-RNSkAndroidVideo::~RNSkAndroidVideo() = default;
++// Focus Room yaması: Java tarafındaki çözücü iş parçacığı / MediaCodec / MediaPlayer
++// bırakılsın (özgün sürüm release()'i hiç çağırmıyordu).
++RNSkAndroidVideo::~RNSkAndroidVideo() {
++  try {
++    JNIEnv *env = facebook::jni::Environment::current();
++    if (env == nullptr || !_jniVideo) {
++      return;
++    }
++    jclass cls = env->GetObjectClass(_jniVideo.get());
++    jmethodID mid = env->GetMethodID(cls, "release", "()V");
++    if (mid != nullptr) {
++      env->CallVoidMethod(_jniVideo.get(), mid);
++    }
++    if (env->ExceptionCheck()) {
++      env->ExceptionClear();
++    }
++  } catch (...) {
++    // yıkıcıdan istisna kaçmasın
++  }
++}
+ 
+ sk_sp<SkImage> RNSkAndroidVideo::nextImage(double *timeStamp) {
+ #if __ANDROID_API__ >= 26
+diff --git a/node_modules/@shopify/react-native-skia/android/src/main/java/com/reactnative/skia/RNSkVideo.java b/node_modules/@shopify/react-native-skia/android/src/main/java/com/reactnative/skia/RNSkVideo.java
+index 24b5e11..0f62af0 100644
+--- a/node_modules/@shopify/react-native-skia/android/src/main/java/com/reactnative/skia/RNSkVideo.java
++++ b/node_modules/@shopify/react-native-skia/android/src/main/java/com/reactnative/skia/RNSkVideo.java
+@@ -1,30 +1,40 @@
+ package com.reactnative.skia;
+ 
++// Focus Room yaması (mobile/patches/@shopify+react-native-skia+2.15.2.patch):
++// Özgün sınıf her nextImage() çağrısında JS iş parçacığında tek kare çözüyor
++// (10+10 ms bekleyerek) ve kendi saati yoktu: video çağrı hızında, ağır çekim ve
++// kesik akıyordu; sonda görüntü başa sarmıyordu. Burada çözücü gerçek bir oynatıcı
++// gibi kendi arka plan iş parçacığında, karelerin zaman damgalarına göre çalışır:
++//  - kare zamanı gelince ImageReader yüzeyine bırakılır, çok geç kalan kare atlanır
++//  - döngü, duraklatma, sarma (seek) çözücü iş parçacığında
++//  - nextImage() beklemez: en son hazır kareyi verir (ekrandakini açık tutar ki
++//    çözücü üzerine yazmasın)
++// Kareler çözücünün kendi çözünürlüğündedir; kalite değişmez.
++
+ import android.content.Context;
+ import android.graphics.ImageFormat;
+ import android.hardware.HardwareBuffer;
+-import android.media.AudioAttributes;
+ import android.media.AudioManager;
++import android.media.Image;
++import android.media.ImageReader;
+ import android.media.MediaCodec;
+ import android.media.MediaExtractor;
+ import android.media.MediaFormat;
+ import android.media.MediaPlayer;
+-import android.media.MediaSync;
+-import android.media.Image;
+-import android.media.ImageReader;
+ import android.net.Uri;
+ import android.os.Build;
+ import android.view.Surface;
+ import android.graphics.Point;
+ 
+-import androidx.annotation.RequiresApi;
+-
+ import com.facebook.jni.annotations.DoNotStrip;
+ 
+ import java.io.IOException;
+ import java.nio.ByteBuffer;
+ 
+ public class RNSkVideo {
++    private static final long IO_TIMEOUT_US = 5000;          // çözücü giriş/çıkış bekleme
++    private static final long LATE_DROP_NS = 120_000_000L;   // bu kadar geç kalan kare gösterilmez
++
+     private final Uri uri;
+     private final Context context;
+ 
+@@ -33,25 +43,40 @@ public class RNSkVideo {
+     private ImageReader imageReader;
+     private Surface outputSurface;
+     private MediaPlayer mediaPlayer;
+-    private MediaSync mediaSync;
+     private double durationMs;
+     private double frameRate;
+     private int rotationDegrees = 0;
+     private int width = 0;
+     private int height = 0;
+ 
++    // Ses (MediaPlayer) durumu
+     private boolean isPlaying = false;
+-    private boolean isLooping = false;
+     private boolean isPrepared = false;
+     private boolean playWhenReady = false;
++
++    // Görüntü (çözücü iş parçacığı) durumu
++    private final Object lock = new Object();
++    private Thread decodeThread;
++    private volatile boolean running = true;
++    private volatile boolean videoPlaying = false;
++    private volatile boolean isLooping = false;
++    private volatile double lastFrameTimeMs = 0;
++    private double pendingSeekMs = -1;      // lock ile korunur
++    private boolean inputDone = false;      // yalnız çözücü iş parçacığı
++    private boolean showAfterSeek = false;  // yalnız çözücü iş parçacığı
++    private long seekTargetUs = 0;          // yalnız çözücü iş parçacığı
++    private long clockBaseNs = -1;          // bu anda clockBasePtsUs gösterildi (lock / çözücü)
++    private long clockBasePtsUs = 0;
++
++    // nextImage (JS iş parçacığı)
++    private Image heldImage = null;
+     private HardwareBuffer lastBuffer = null;
+-    private boolean pendingSeek = false;
+-    private double lastFrameTimeMs = 0;
+ 
+     RNSkVideo(Context context, String localUri) {
+         this.uri = Uri.parse(localUri);
+         this.context = context;
+         this.initializeReader();
++        this.startDecodeThread();
+     }
+ 
+     private void initializeReader() {
+@@ -65,33 +90,24 @@ public class RNSkVideo {
+             extractor.selectTrack(trackIndex);
+             MediaFormat format = extractor.getTrackFormat(trackIndex);
+ 
+-            // Initialize MediaPlayer
+             mediaPlayer = new MediaPlayer();
+             mediaPlayer.setDataSource(context, uri);
+             mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+             mediaPlayer.setOnPreparedListener(mp -> {
+                 durationMs = mp.getDuration();
+                 isPrepared = true;
+-                // Apply looping setting
+                 mp.setLooping(isLooping);
+-                // Start playing if play() was called before preparation completed
+                 if (playWhenReady) {
+                     mp.start();
+                     isPlaying = true;
+                     playWhenReady = false;
+                 }
+             });
+-            // Note: When setLooping(true) is used, this listener won't fire as
+-            // MediaPlayer handles looping automatically. This only handles the
+-            // non-looping case to update playback state.
+-            mediaPlayer.setOnCompletionListener(mp -> {
+-                isPlaying = false;
+-            });
++            mediaPlayer.setOnCompletionListener(mp -> isPlaying = false);
+             mediaPlayer.prepareAsync();
+ 
+-            // Retrieve and store video properties
+             if (format.containsKey(MediaFormat.KEY_DURATION)) {
+-                durationMs = format.getLong(MediaFormat.KEY_DURATION) / 1000;  // Convert microseconds to milliseconds
++                durationMs = format.getLong(MediaFormat.KEY_DURATION) / 1000;
+             }
+             if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+                 frameRate = format.getInteger(MediaFormat.KEY_FRAME_RATE);
+@@ -101,25 +117,17 @@ public class RNSkVideo {
+             }
+             width = format.getInteger(MediaFormat.KEY_WIDTH);
+             height = format.getInteger(MediaFormat.KEY_HEIGHT);
++            // 3 kare: biri ekranda (açık tutulur), biri en son hazır, biri çözücünün yazdığı
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+-                imageReader = ImageReader.newInstance(
+-                        width,
+-                        height,
+-                        ImageFormat.PRIVATE,
+-                        2,
+-                        HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE
+-                );
++                imageReader = ImageReader.newInstance(width, height, ImageFormat.PRIVATE, 3,
++                        HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE);
+             } else {
+-                imageReader = ImageReader.newInstance(width, height,
+-                        ImageFormat.PRIVATE, 2);
++                imageReader = ImageReader.newInstance(width, height, ImageFormat.PRIVATE, 3);
+             }
+             outputSurface = imageReader.getSurface();
+ 
+-            // Create a decoder for the format
+             String mime = format.getString(MediaFormat.KEY_MIME);
+             decoder = MediaCodec.createDecoderByType(mime);
+-
+-            // Note: Use an output Surface for rendering if necessary, otherwise handle buffers
+             decoder.configure(format, outputSurface, null, 0);
+             decoder.start();
+         } catch (IOException e) {
+@@ -127,6 +135,150 @@ public class RNSkVideo {
+         }
+     }
+ 
++    private int selectVideoTrack(MediaExtractor extractor) {
++        int numTracks = extractor.getTrackCount();
++        for (int i = 0; i < numTracks; i++) {
++            MediaFormat format = extractor.getTrackFormat(i);
++            String mime = format.getString(MediaFormat.KEY_MIME);
++            if (mime != null && mime.startsWith("video/")) {
++                return i;
++            }
++        }
++        return -1;
++    }
++
++    // --- Çözücü iş parçacığı ---------------------------------------------------
++
++    private void startDecodeThread() {
++        // İlk kare duraklatılmışken de hazır olsun (önizleme)
++        showAfterSeek = true;
++        seekTargetUs = 0;
++        decodeThread = new Thread(this::decodeLoop, "RNSkVideo-decode");
++        decodeThread.setDaemon(true);
++        decodeThread.start();
++    }
++
++    private void decodeLoop() {
++        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
++        try {
++            while (running) {
++                double seekMs;
++                synchronized (lock) {
++                    seekMs = pendingSeekMs;
++                    pendingSeekMs = -1;
++                    if (seekMs < 0 && !videoPlaying && !showAfterSeek) {
++                        lock.wait(50);
++                        continue;
++                    }
++                }
++                if (seekMs >= 0) restartAt((long) (seekMs * 1000));
++                feedInput();
++                drainOutput(info);
++            }
++        } catch (InterruptedException ignored) {
++            // release()
++        } catch (Throwable ignored) {
++            // Çözücü hata verirse görüntü son karede kalır; uygulama düşmesin
++        }
++    }
++
++    private void restartAt(long us) {
++        extractor.seekTo(us, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
++        decoder.flush();
++        inputDone = false;
++        seekTargetUs = us;
++        showAfterSeek = true;
++        synchronized (lock) {
++            clockBaseNs = -1;
++        }
++    }
++
++    private void feedInput() {
++        if (inputDone) return;
++        int in = decoder.dequeueInputBuffer(IO_TIMEOUT_US);
++        if (in < 0) return;
++        ByteBuffer buf = decoder.getInputBuffer(in);
++        int size = buf == null ? -1 : extractor.readSampleData(buf, 0);
++        if (size < 0) {
++            decoder.queueInputBuffer(in, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
++            inputDone = true;
++        } else {
++            decoder.queueInputBuffer(in, 0, size, extractor.getSampleTime(), 0);
++            extractor.advance();
++        }
++    }
++
++    private void drainOutput(MediaCodec.BufferInfo info) throws InterruptedException {
++        int out = decoder.dequeueOutputBuffer(info, IO_TIMEOUT_US);
++        if (out < 0) return; // INFO_TRY_AGAIN_LATER / biçim değişti
++        boolean eos = (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
++        long pts = info.presentationTimeUs;
++
++        if (eos && info.size == 0) {
++            decoder.releaseOutputBuffer(out, false); // boş akış-sonu tamponu: gösterilmez
++            onEndOfStream();
++            return;
++        }
++
++        if (showAfterSeek) {
++            // Sarma sonrası: hedefe kadar olan kareler gösterilmeden geçilir
++            if (pts < seekTargetUs && !eos) {
++                decoder.releaseOutputBuffer(out, false);
++                return;
++            }
++            decoder.releaseOutputBuffer(out, true);
++            lastFrameTimeMs = pts / 1000.0;
++            showAfterSeek = false;
++            synchronized (lock) {
++                clockBaseNs = System.nanoTime();
++                clockBasePtsUs = pts;
++            }
++        } else {
++            long dueNs;
++            synchronized (lock) {
++                if (clockBaseNs < 0) {
++                    clockBaseNs = System.nanoTime();
++                    clockBasePtsUs = pts;
++                }
++                dueNs = clockBaseNs + (pts - clockBasePtsUs) * 1000L;
++            }
++            long late = System.nanoTime() - dueNs;
++            if (late > LATE_DROP_NS) {
++                decoder.releaseOutputBuffer(out, false); // geç kaldı: atla, zaman yine ilerler
++            } else {
++                // Zamanı gelene dek bekle; duraklatma / sarma beklemeyi keser
++                while (running && videoPlaying && !hasPendingSeek()) {
++                    long waitNs = dueNs - System.nanoTime();
++                    if (waitNs <= 0) break;
++                    long ms = Math.min(10L, waitNs / 1_000_000L);
++                    int ns = ms >= 10L ? 0 : (int) (waitNs % 1_000_000L);
++                    Thread.sleep(ms, ns);
++                }
++                decoder.releaseOutputBuffer(out, true);
++            }
++            lastFrameTimeMs = pts / 1000.0;
++        }
++        if (eos) onEndOfStream();
++    }
++
++    private void onEndOfStream() {
++        if (isLooping) {
++            restartAt(0);
++            showAfterSeek = false; // döngüde ilk kare de kendi zamanında gösterilir
++        } else {
++            inputDone = true;
++            videoPlaying = false;
++        }
++    }
++
++    private boolean hasPendingSeek() {
++        synchronized (lock) {
++            return pendingSeekMs >= 0;
++        }
++    }
++
++    // --- JS'ten çağrılanlar ------------------------------------------------------
++
+     @DoNotStrip
+     public double getDuration() {
+         return durationMs;
+@@ -142,53 +294,36 @@ public class RNSkVideo {
+         return rotationDegrees;
+     }
+ 
++    /** Beklemez: en son hazır kare (yoksa ekrandaki). */
+     @DoNotStrip
+     public HardwareBuffer nextImage() {
+-        // If paused and not seeking, return cached buffer
+-        if (!isPlaying && !pendingSeek && lastBuffer != null) {
+-            return lastBuffer;
+-        }
+-
+-        // Decode new frame if needed
+-        if (!decoderOutputAvailable()) {
+-            decodeFrame();
++        ImageReader reader = imageReader;
++        if (reader == null) return lastBuffer;
++        Image image;
++        try {
++            image = reader.acquireLatestImage();
++        } catch (IllegalStateException e) {
++            image = null; // anlık olarak tüm kareler açık
+         }
+-
+-        Image image = imageReader.acquireLatestImage();
+         if (image != null) {
+             HardwareBuffer hardwareBuffer = image.getHardwareBuffer();
+-            image.close();  // Make sure to close the Image to free up the buffer
+-            // Cache the buffer
++            // Önceki kare artık ekranda değil: çözücü yeniden kullanabilir
++            if (heldImage != null) heldImage.close();
++            heldImage = image;
+             lastBuffer = hardwareBuffer;
+-            // Clear pending seek flag after getting frame
+-            if (pendingSeek) {
+-                pendingSeek = false;
+-            }
+-            return hardwareBuffer;
+         }
+-        // Return cached buffer if no new frame available
+         return lastBuffer;
+     }
+ 
+     @DoNotStrip
+     public void seek(double timestamp) {
+-        long timestampUs = (long)(timestamp * 1000); // Convert milliseconds to microseconds
+-
+-        extractor.seekTo(timestampUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+         if (mediaPlayer != null && isPrepared) {
+-            int timestampMs = (int) timestamp; // Convert to milliseconds
+-            mediaPlayer.seekTo(timestampMs, MediaPlayer.SEEK_CLOSEST);
++            mediaPlayer.seekTo((int) timestamp, MediaPlayer.SEEK_CLOSEST);
+         }
+-
+-        // Flush the codec to reset internal state and prepare for new position
+-        if (decoder != null) {
+-            decoder.flush();
++        synchronized (lock) {
++            pendingSeekMs = Math.max(0, timestamp);
++            lock.notifyAll();
+         }
+-
+-        // Signal that we need to decode a new frame (for seek while paused)
+-        pendingSeek = true;
+-        // Decode a frame immediately so it's ready
+-        decodeFrame();
+     }
+ 
+     @DoNotStrip
+@@ -196,64 +331,15 @@ public class RNSkVideo {
+         return new Point(width, height);
+     }
+ 
+-    private int selectVideoTrack(MediaExtractor extractor) {
+-        int numTracks = extractor.getTrackCount();
+-        for (int i = 0; i < numTracks; i++) {
+-            MediaFormat format = extractor.getTrackFormat(i);
+-            String mime = format.getString(MediaFormat.KEY_MIME);
+-            if (mime.startsWith("video/")) {
+-                return i;
+-            }
+-        }
+-        return -1;
+-    }
+-
+-    private boolean decoderOutputAvailable() {
+-        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+-        int outputBufferId = decoder.dequeueOutputBuffer(info, 0);
+-        if (outputBufferId >= 0) {
+-            // If a buffer is available, release it immediately back since we are just checking
+-            decoder.releaseOutputBuffer(outputBufferId, true);
+-            return true;
+-        }
+-        return false;
+-    }
+-
+-    private void decodeFrame() {
+-        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+-        long timeoutUs = 10000;
+-        boolean isEOS = false;
+-
+-        int inputBufferId = decoder.dequeueInputBuffer(timeoutUs);
+-        if (inputBufferId >= 0) {
+-            ByteBuffer inputBuffer = decoder.getInputBuffer(inputBufferId);
+-            int sampleSize = extractor.readSampleData(inputBuffer, 0);
+-            if (sampleSize < 0) {
+-                // End of stream, make sure to send this information to the decoder
+-                decoder.queueInputBuffer(inputBufferId, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+-                isEOS = true;
+-            } else {
+-                long presentationTimeUs = extractor.getSampleTime();
+-                decoder.queueInputBuffer(inputBufferId, 0, sampleSize, presentationTimeUs, 0);
+-                extractor.advance();
+-            }
+-        }
+-
+-        int outputBufferId = decoder.dequeueOutputBuffer(info, timeoutUs);
+-        if (outputBufferId >= 0) {
+-            // Store the frame's presentation timestamp for accurate time reporting
+-            lastFrameTimeMs = info.presentationTimeUs / 1000.0;
+-            // If we have a valid buffer, release it to make it available to the ImageReader's surface
+-            decoder.releaseOutputBuffer(outputBufferId, true);
+-
+-            if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+-                isEOS = true;
+-            }
+-        }
+-    }
+-
+     @DoNotStrip
+     public void play() {
++        synchronized (lock) {
++            if (!videoPlaying) {
++                clockBaseNs = -1; // saat bir sonraki kareden yeniden kurulur
++                videoPlaying = true;
++                lock.notifyAll();
++            }
++        }
+         if (mediaPlayer == null || isPlaying) {
+             return;
+         }
+@@ -261,13 +347,13 @@ public class RNSkVideo {
+             mediaPlayer.start();
+             isPlaying = true;
+         } else {
+-            // Queue the play request for when preparation completes
+             playWhenReady = true;
+         }
+     }
+ 
+     @DoNotStrip
+     public void pause() {
++        videoPlaying = false;
+         playWhenReady = false;
+         if (mediaPlayer != null && isPlaying) {
+             mediaPlayer.pause();
+@@ -282,9 +368,9 @@ public class RNSkVideo {
+         }
+     }
+ 
++    /** Ekrana bırakılan son karenin zamanı (ms) */
+     @DoNotStrip
+     public double getCurrentTime() {
+-        // Return the timestamp of the last decoded frame for accurate synchronization
+         return lastFrameTimeMs;
+     }
+ 
+@@ -298,17 +384,39 @@ public class RNSkVideo {
+ 
+     @DoNotStrip
+     public boolean getIsPlaying() {
+-        return isPlaying;
++        return videoPlaying || isPlaying;
+     }
+ 
++    /** RNSkAndroidVideo yıkıcısından çağrılır (yama): iş parçacığı ve çözücü bırakılır */
++    @DoNotStrip
+     public void release() {
++        running = false;
++        videoPlaying = false;
++        Thread t = decodeThread;
++        decodeThread = null;
++        if (t != null) {
++            t.interrupt();
++            try {
++                t.join(500);
++            } catch (InterruptedException ignored) {
++                Thread.currentThread().interrupt();
++            }
++        }
++        if (heldImage != null) {
++            heldImage.close();
++            heldImage = null;
++        }
+         lastBuffer = null;
+         if (mediaPlayer != null) {
+             mediaPlayer.release();
+             mediaPlayer = null;
+         }
+         if (decoder != null) {
+-            decoder.stop();
++            try {
++                decoder.stop();
++            } catch (IllegalStateException ignored) {
++                // zaten durmuş
++            }
+             decoder.release();
+             decoder = null;
+         }
+@@ -316,5 +424,9 @@ public class RNSkVideo {
+             extractor.release();
+             extractor = null;
+         }
++        if (imageReader != null) {
++            imageReader.close();
++            imageReader = null;
++        }
+     }
+ }

@@ -1,0 +1,86 @@
+{
+  "expo": {
+    "name": "Focus Room",
+    "slug": "focus-room-mobil",
+    "scheme": "focusroom",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b0b0d",
+    "ios": {
+      "supportsTablet": true,
+      "requireFullScreen": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoads": true
+        },
+        "NSLocalNetworkUsageDescription": "Focus Room, odalarını bilgisayarındaki sunucudan yerel ağ üzerinden yükler."
+      },
+      "bundleIdentifier": "com.yucelsedat.focusroom"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0b0b0d",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.yucelsedat.focusroom",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0b0b0d",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 120
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Duvarlarına resim asmak için galerindeki fotoğraflara erişim gerekiyor.",
+          "cameraPermission": "Duvarlarına fotoğraf ve video asmak için kamera erişimi gerekiyor.",
+          "microphonePermission": "Duvarlarına sesli video çekebilmen için mikrofon erişimi gerekiyor."
+        }
+      ],
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ],
+      "expo-video",
+      "expo-status-bar",
+      "./plugins/withGradleLimits"
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "fe4e251a-e88a-4d1c-ae61-25967dac32b5"
+      }
+    },
+    "owner": "yucelsedat"
+  }
+}
