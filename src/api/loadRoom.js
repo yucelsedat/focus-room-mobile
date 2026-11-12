@@ -1,7 +1,7 @@
 // Web'deki src/utils/loadRoom.js'in mobil karşılığı: odayı sunucuda aktifleştirir,
 // medya + kapı + bağlantı verisini çekip store'a yazar.
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import { api } from './client'
+import { recordVisit } from './visits'
 import { useStore } from '../store/useStore'
 
 const byLayer = (rows, layer) => rows.filter((r) => r.layer === layer)
@@ -11,8 +11,10 @@ export async function loadRoom(id, name) {
   setLoading(true)
   setError(null)
   try {
-    // Sunucu "aktif oda"yı global tutar; sonraki GET'ler bu odaya göre döner
-    const { room } = await api(`/api/rooms/${encodeURIComponent(id)}/activate`, { method: 'POST' })
+    // Sunucu "aktif oda"yı global tutar; sonraki GET'ler bu odaya göre döner.
+    // touch: false → web'in son kullanılan sırasına (lastActiveAt) dokunma; mobil
+    // ziyaret geçmişi cihazda tutulur (visits.js).
+    const { room } = await api(`/api/rooms/${encodeURIComponent(id)}/activate`, { method: 'POST', body: { touch: false } })
     const roomType = room?.roomType ?? 'room'
 
     const [media, doors, floor, specialDoors, roomLinks] = await Promise.all([
@@ -49,7 +51,7 @@ export async function loadRoom(id, name) {
       selectedMedia: null,
     })
     addToHistory(id, roomName)
-    AsyncStorage.multiSet([['lastRoomId', id], ['lastRoomName', roomName]]).catch(() => {})
+    recordVisit(id, roomName).catch(() => {})
   } catch (err) {
     setError(err.message || String(err))
     throw err

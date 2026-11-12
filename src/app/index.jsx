@@ -1,28 +1,22 @@
 // Giriş: sunucuyu otomatik bulur, ardından dünya (kök oda) seçimi.
 // Web WorldSelect'in mobil karşılığı. Adres elle girilmez; yalnızca otomatik
 // arama başarısız olursa son çare olarak elle giriş sunulur.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Platform, Pressable,
   RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import AsyncStorage from '@react-native-async-storage/async-storage'
-import { api, assetUrl, normalizeServerUrl, saveServerUrl } from '../api/client'
+import { assetUrl, normalizeServerUrl, saveServerUrl } from '../api/client'
 import { discoverServer, probe } from '../api/discovery'
+import { refreshRooms } from '../api/loadRoom'
+import { getVisits, lastVisit, orderWorlds, recentRooms, worldsOf } from '../api/visits'
 import { useStore } from '../store/useStore'
 import { colors, fonts, type, space, radius } from '../theme'
 
 function openRoom(room) {
   router.push({ pathname: '/room', params: { id: room.id, name: room.name } })
-}
-
-async function fetchHome() {
-  const [worlds, rooms] = await Promise.all([api('/api/worlds'), api('/api/rooms')])
-  const [[, id], [, name]] = await AsyncStorage.multiGet(['lastRoomId', 'lastRoomName'])
-  const last = id && rooms.some((r) => r.id === id) ? { id, name } : null
-  return { worlds, rooms, last }
 }
 
 // Son çare: otomatik arama sunucuyu bulamadıysa
@@ -90,15 +84,18 @@ function WorldCard({ world, index }) {
 
 export default function Home() {
   const insets = useSafeAreaInsets()
+  // Dünyalar da alt odalar da store'daki tek listeden (/api/rooms): oda ekranı ve oda
+  // oluşturma akışı bu listeyi tazeler, yeni / silinen odalar sıralamaya hemen yansır.
+  const rooms = useStore((s) => s.rooms)
   const setRooms = useStore((s) => s.setRooms)
   // phase: 'searching' → 'ready' | 'notfound'
   const [phase, setPhase] = useState('searching')
   const [status, setStatus] = useState('Sunucu aranıyor')
   const [attempt, setAttempt] = useState(0)
   const [server, setServer] = useState(null)
-  const [worlds, setWorlds] = useState([])
-  const [recent, setRecent] = useState([])
-  const [last, setLast] = useState(null)
+  // Sıra cihazın kendi ziyaret geçmişinden (visits.js), sunucunun lastActiveAt'inden değil
+  const [visits, setVisits] = useState([])
+  const loadedFor = useRef(null) // listesi en az bir kez yüklenmiş sunucu
   const [loading, setLoading] = useState(false)
   const [manual, setManual] = useState(false)
 
@@ -125,27 +122,30 @@ export default function Home() {
     setAttempt((a) => a + 1)
   }, [])
 
-  const apply = useCallback((data) => {
-    setWorlds(data.worlds)
-    setRooms(data.rooms)
-    setRecent(data.rooms.filter((r) => r.parent).slice(0, 6))
-    setLast(data.last)
-  }, [setRooms])
-
-  useEffect(() => {
+  // İlk açılış ve odadan her dönüş: geçmiş + oda listesi tazelenir (oda, web'de ya da
+  // telefonda eklenmiş / silinmiş olabilir). Liste elde varken geçici bir ağ hatası
+  // arama ekranına atmaz; yalnızca bu sunucudan hiç liste alınamadıysa yeniden aranır.
+  useFocusEffect(useCallback(() => {
     if (!server) return undefined
     let alive = true
-    fetchHome()
-      .then((d) => alive && apply(d), () => alive && rediscover())
+    if (loadedFor.current !== server) setRooms([]) // başka sunucunun odaları görünmesin
+    getVisits().then((v) => alive && setVisits(v))
+    refreshRooms()
+      .then(() => { loadedFor.current = server }, () => alive && loadedFor.current !== server && rediscover())
       .finally(() => alive && setLoading(false))
     return () => { alive = false }
-  }, [server, apply, rediscover])
+  }, [server, setRooms, rediscover]))
+
+  const worlds = useMemo(() => orderWorlds(worldsOf(rooms), rooms, visits), [rooms, visits])
+  const recent = useMemo(() => recentRooms(rooms, visits), [rooms, visits])
+  const last = useMemo(() => lastVisit(rooms, visits), [rooms, visits])
 
   // Aşağı çekip yenile — sunucu kaybolduysa (IP değişti vb.) yeniden ara
   const refresh = useCallback(() => {
     setLoading(true)
-    fetchHome().then(apply, rediscover).finally(() => setLoading(false))
-  }, [apply, rediscover])
+    getVisits().then(setVisits)
+    refreshRooms().catch(rediscover).finally(() => setLoading(false))
+  }, [rediscover])
 
   const onManualConnected = (url) => {
     setLoading(true)
