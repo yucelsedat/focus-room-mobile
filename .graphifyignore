@@ -1,0 +1,18 @@
+# graphify .gitignore'u okumaz. Gizli dizinler (.expo, .claude, .git), node_modules, dist,
+# build ve kilit dosyaları zaten atlanır; buradakiler ek olarak dışlananlardır.
+
+# Yerel yerel-kod üretimi (expo prebuild / run:android) — kaynak app.json + plugins/ + patches/
+android/
+ios/
+web-build/
+
+# Görsel varlıklar (ikonlar, dokular) — kod grafına katkısı yok, görsel çıkarımı boşa harcar
+assets/
+
+# Üretilmiş glif verisi (scripts/gen-typeface.mjs çıktısı)
+src/scene/fonts/
+
+# Derleme çıktıları
+*.apk
+*.aab
+*.ipa

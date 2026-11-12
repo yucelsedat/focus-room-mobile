@@ -52,3 +52,7 @@ yarn-error.*
 
 # Claude Code kişisel ayarları
 .claude/settings.local.json
+
+# graphify çıktısı — yalnız özet rapor izlenir
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md
