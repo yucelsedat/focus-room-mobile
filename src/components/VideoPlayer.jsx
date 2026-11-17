@@ -1,7 +1,7 @@
 // Video tile'ın sesli, tam ekran oynatıcısı — expo-video (telefonun yerel oynatıcısı:
 // Android ExoPlayer, iOS AVPlayer). Video kendi çözünürlüğünde, donanımla çözülür;
 // oynat / duraklat, sarma, ses gibi denetimler yerel. Yatay video için ekran yataya
-// döner, kapanınca dikeye kilitlenir. Açılamazsa telefonun kendi oynatıcısında açılabilir.
+// döner, kapanınca kilit kalkar (telefonun tuttuğu yön). Açılamazsa telefonun kendi oynatıcısında açılabilir.
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, BackHandler, Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
@@ -30,7 +30,7 @@ function PlayerHost({ video }) {
     const t = setTimeout(() => setWaited(true), 1200)
     return () => {
       clearTimeout(t)
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {})
+      ScreenOrientation.unlockAsync().catch(() => {}) // telefonun tuttuğu yöne döner
     }
   }, [landscape])
   const ready = waited || (landscape ? width > height : height >= width)

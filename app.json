@@ -64,7 +64,7 @@
       [
         "expo-screen-orientation",
         {
-          "initialOrientation": "PORTRAIT_UP"
+          "initialOrientation": "DEFAULT"
         }
       ],
       "expo-video",

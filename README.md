@@ -132,8 +132,10 @@ src/components/     HUD, alttan açılan sayfalar (TileSheet: resim / metin / ca
 scripts/            gen-typeface.mjs — TTF → three.js typeface (Türkçe karakterli)
 ```
 
-Uygulama dikeydir; yalnız canvas düzenleyici yataya döner (`app.json` → `orientation:
-default` + açılışta `expo-screen-orientation` ile dikey kilit).
+Uygulama dikey ve yatayda çalışır (`app.json` → `orientation: default`, açılışta
+`ScreenOrientation.unlockAsync()`). Canvas düzenleyici yataya, video oynatıcı videonun yönüne
+kilitlenir; kapanınca kilit kalkar. Yatayda alt sayfalar sağdan açılan yan panel olur
+(`Sheet` → `useSheetLayout`), ana sayfa iki sütundur, HUD çentik boşluklarını hesaba katar.
 
 Oda modeli (`roomConfig`, `roomTree`) web ile ortaktır; kopyası `src/shared/` altındadır
 (kanonik: `focus-room-main/src/utils`). Web'de değişirse buradaki kopya da güncellenmeli.

@@ -9,7 +9,7 @@
 // Tile'da zaten medya varsa üstte listelenir (resim: boyut / sil, metin: düzenle / sil;
 // resim / metin / canvas: kopyala / kes). Panoda öğe varsa en üstte "Yapıştır" şeridi.
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native'
+import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import * as Clipboard from 'expo-clipboard'
 import { useStore } from '../store/useStore'
@@ -24,7 +24,7 @@ import { metaFor, stripMarkdown } from '../scene/media'
 import { enqueueRender } from '../markdown/skia'
 import { MD } from '../markdown/render'
 import { CLIP_TYPES, clipLabel, pasteClipboard, removeTileMedia, toggleClip } from '../api/tileClipboard'
-import { Sheet, SectionLabel } from './Sheet'
+import { Sheet, SectionLabel, useSheetLayout } from './Sheet'
 import { WallFit } from './WallFit'
 import { probeVideo, formatTime } from '../video/video'
 import { colors, fonts, type, space, radius } from '../theme'
@@ -604,7 +604,7 @@ const TOOLS = [
 
 function useTextForm({ tile, close, active, initialEdit, setBusy }) {
   const { addMedia, updateMedia } = useStore.getState()
-  const { width: screenW } = useWindowDimensions()
+  const { contentWidth: previewW } = useSheetLayout()
   const [editing, setEditing] = useState(initialEdit)
   const [text, setText] = useState(initialEdit?.content ?? '')
   const [step, setStep] = useState(null) // null | 'saving'
@@ -664,7 +664,6 @@ function useTextForm({ tile, close, active, initialEdit, setBusy }) {
 
   const cols = preview?.cols ?? 1
   const wallWidth = editing ? Math.max(editing.width, cols * 3) : cols * 3
-  const previewW = screenW - space.lg * 2
   const previewH = preview ? previewW / ((preview.shown * MD.COL_PX) / (MD.HEIGHT * MD.PX_PER_UNIT)) : 0
 
   const footer = (

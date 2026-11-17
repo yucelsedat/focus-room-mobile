@@ -13,6 +13,7 @@ import { discoverServer, probe } from '../api/discovery'
 import { refreshRooms } from '../api/loadRoom'
 import { getVisits, lastVisit, orderWorlds, recentRooms, worldsOf } from '../api/visits'
 import { useStore } from '../store/useStore'
+import { useScreen } from '../layout'
 import { colors, fonts, type, space, radius } from '../theme'
 
 function openRoom(room) {
@@ -64,16 +65,17 @@ function ManualForm({ onConnected }) {
   )
 }
 
-function WorldCard({ world, index }) {
+// compact: yataydaki dörtlü grid hücresi (daha alçak, daha küçük yazı)
+function WorldCard({ world, index, width, compact }) {
   const cover = world.coverImage ? assetUrl(world.coverImage) : null
   return (
-    <Pressable onPress={() => openRoom(world)} style={({ pressed }) => [styles.card, pressed && { transform: [{ scale: 0.985 }] }]} accessibilityRole="button">
+    <Pressable onPress={() => openRoom(world)} style={({ pressed }) => [styles.card, compact && styles.cardCompact, width != null && { width }, pressed && { transform: [{ scale: 0.985 }] }]} accessibilityRole="button">
       {cover && <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: cover ? 'rgba(8,8,10,0.55)' : 'transparent' }]} />
-      <Text style={styles.cardIndex}>{String(index + 1).padStart(2, '0')}</Text>
+      <Text style={[styles.cardIndex, compact && styles.cardIndexCompact]}>{String(index + 1).padStart(2, '0')}</Text>
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Text style={styles.cardName} numberOfLines={2}>{world.name}</Text>
-        <Text style={styles.cardMeta}>
+        <Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{world.name}</Text>
+        <Text style={[styles.cardMeta, compact && styles.cardMetaCompact]} numberOfLines={1}>
           {world.children?.length ? `${world.children.length} alt oda` : 'Tek oda'}
           {world.roomType === 'cadde' ? ' · cadde' : ''}
         </Text>
@@ -84,6 +86,12 @@ function WorldCard({ world, index }) {
 
 export default function Home() {
   const insets = useSafeAreaInsets()
+  // Yatay: dünyalar dörtlü grid (soldan sağa), "Kaldığın yer" bir grid hücresi genişliğinde,
+  // yanında geniş "Son odalar" alanı. Kenar boşlukları çentiği / kamera deliğini hesaba katar.
+  const { width, landscape } = useScreen()
+  const cols = landscape ? 4 : 1
+  const pad = { paddingLeft: insets.left + space.lg, paddingRight: insets.right + space.lg }
+  const cardW = cols > 1 ? (width - pad.paddingLeft - pad.paddingRight - space.md * (cols - 1)) / cols : null
   // Dünyalar da alt odalar da store'daki tek listeden (/api/rooms): oda ekranı ve oda
   // oluşturma akışı bu listeyi tazeler, yeni / silinen odalar sıralamaya hemen yansır.
   const rooms = useStore((s) => s.rooms)
@@ -157,7 +165,7 @@ export default function Home() {
     const searching = phase === 'searching'
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.list}>
-        <ScrollView contentContainerStyle={[styles.root, { paddingTop: insets.top + space.xxl, paddingBottom: insets.bottom + space.xl }]} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.root, pad, { paddingTop: insets.top + space.xxl, paddingBottom: insets.bottom + space.xl }]} keyboardShouldPersistTaps="handled">
           <Text style={styles.heroThin}>Focus</Text>
           <Text style={styles.hero}>Room</Text>
           {searching ? (
@@ -188,51 +196,94 @@ export default function Home() {
     )
   }
 
+  const resume = last && (
+    <Pressable onPress={() => openRoom(last)} style={styles.resume} accessibilityRole="button">
+      <Text style={styles.resumeEyebrow}>Kaldığın yer</Text>
+      <Text style={styles.resumeName} numberOfLines={1}>{last.name}</Text>
+      <Text style={styles.resumeArrow}>→</Text>
+    </Pressable>
+  )
+
+  const recentPills = (
+    <View style={styles.pills}>
+      {recent.map((r) => (
+        <Pressable key={r.id} onPress={() => openRoom(r)} style={styles.pill} accessibilityRole="button">
+          <Text style={styles.pillText} numberOfLines={1}>{r.name}</Text>
+        </Pressable>
+      ))}
+    </View>
+  )
+
+  // Yatay: tek ince satır — solda küçük "Kaldığın yer" hapı, yanında yatay kayan son odalar
+  const resumeStrip = (
+    <View style={styles.strip}>
+      {last && (
+        <Pressable onPress={() => openRoom(last)} style={[styles.resumeChip, { maxWidth: cardW }]} accessibilityRole="button" accessibilityLabel={`Kaldığın yer: ${last.name}`}>
+          <Text style={styles.resumeChipEyebrow}>Kaldığın yer</Text>
+          <Text style={styles.resumeChipName} numberOfLines={1}>{last.name}</Text>
+          <Text style={styles.resumeChipArrow}>→</Text>
+        </Pressable>
+      )}
+      {recent.length > 0 && (
+        <>
+          <Text style={styles.stripLabel}>Son</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={styles.stripPills}>
+            {recent.map((r) => (
+              <Pressable key={r.id} onPress={() => openRoom(r)} style={styles.stripPill} accessibilityRole="button">
+                <Text style={styles.stripPillText} numberOfLines={1}>{r.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </>
+      )}
+    </View>
+  )
+
   const header = (
-    <View style={{ paddingTop: insets.top + space.xl }}>
+    <View style={{ paddingTop: insets.top + (landscape ? space.lg : space.xl) }}>
       <View style={styles.brandRow}>
-        <View>
-          <Text style={styles.heroThin}>Focus</Text>
-          <Text style={styles.hero}>Room</Text>
-        </View>
+        {landscape ? (
+          <Text style={styles.brandInlineThin}>Focus <Text style={styles.brandInline}>Room</Text></Text>
+        ) : (
+          <View>
+            <Text style={styles.heroThin}>Focus</Text>
+            <Text style={styles.hero}>Room</Text>
+          </View>
+        )}
         <Pressable onPress={rediscover} style={styles.serverChip} accessibilityRole="button" accessibilityLabel="Sunucuyu yeniden ara">
           <View style={[styles.statusDot, { backgroundColor: colors.link }]} />
           <Text style={styles.serverText} numberOfLines={1}>{server.replace(/^https?:\/\//, '')}</Text>
         </Pressable>
       </View>
 
-      {last && (
-        <Pressable onPress={() => openRoom(last)} style={styles.resume} accessibilityRole="button">
-          <Text style={styles.resumeEyebrow}>Kaldığın yer</Text>
-          <Text style={styles.resumeName} numberOfLines={1}>{last.name}</Text>
-          <Text style={styles.resumeArrow}>→</Text>
-        </Pressable>
-      )}
-
-      {recent.length > 0 && (
+      {landscape ? (
+        (last || recent.length > 0) && resumeStrip
+      ) : (
         <>
-          <Text style={styles.section}>Son odalar</Text>
-          <View style={styles.pills}>
-            {recent.map((r) => (
-              <Pressable key={r.id} onPress={() => openRoom(r)} style={styles.pill} accessibilityRole="button">
-                <Text style={styles.pillText} numberOfLines={1}>{r.name}</Text>
-              </Pressable>
-            ))}
-          </View>
+          {resume}
+          {recent.length > 0 && (
+            <>
+              <Text style={styles.section}>Son odalar</Text>
+              {recentPills}
+            </>
+          )}
         </>
       )}
-      <Text style={styles.section}>Dünyalar · {worlds.length}</Text>
+      <Text style={[styles.section, landscape && { marginTop: space.lg }]}>Dünyalar · {worlds.length}</Text>
     </View>
   )
 
   return (
     <FlatList
+      key={`cols-${cols}`} // numColumns yerinde değişemez: yön değişince liste yeniden kurulur
       style={styles.list}
-      contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: insets.bottom + space.xxl }}
+      contentContainerStyle={[pad, { paddingBottom: insets.bottom + space.xxl }]}
       data={worlds}
       keyExtractor={(w) => w.id}
+      numColumns={cols}
+      columnWrapperStyle={cols > 1 ? { gap: space.md } : undefined}
       ListHeaderComponent={header}
-      renderItem={({ item, index }) => <WorldCard world={item} index={index} />}
+      renderItem={({ item, index }) => <WorldCard world={item} index={index} width={cardW} compact={landscape} />}
       ListEmptyComponent={loading ? <ActivityIndicator color={colors.accent} style={{ marginTop: space.xl }} /> : null}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.accent} />}
     />
@@ -240,7 +291,7 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  root: { flexGrow: 1, backgroundColor: colors.bg, paddingHorizontal: space.lg },
+  root: { flexGrow: 1, backgroundColor: colors.bg },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xxl },
   searchText: { fontFamily: fonts.body, fontSize: type.heading - 2, color: colors.muted },
   retry: { alignSelf: 'flex-start', height: 52, paddingHorizontal: space.xl, borderRadius: radius.md, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginTop: space.xl, marginBottom: space.lg },
@@ -275,6 +326,24 @@ const styles = StyleSheet.create({
   resumeEyebrow: { fontFamily: fonts.strong, fontSize: type.micro, letterSpacing: 1.6, color: colors.accentInk, textTransform: 'uppercase', opacity: 0.7 },
   resumeName: { fontFamily: fonts.display, fontSize: type.title, color: colors.accentInk, marginTop: 2, paddingRight: 40 },
   resumeArrow: { position: 'absolute', right: space.lg, bottom: space.lg, fontFamily: fonts.strong, fontSize: type.title, color: colors.accentInk },
+  // Yatay: tek satır şerit (32 px) — "Kaldığın yer" hapı + yatay kayan son odalar
+  brandInlineThin: { fontFamily: fonts.displayThin, fontSize: type.hero - 8, lineHeight: (type.hero - 8) * 1.1, color: colors.text },
+  brandInline: { fontFamily: fonts.display, color: colors.accent },
+  strip: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
+  resumeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: space.md,
+    borderRadius: radius.pill, backgroundColor: colors.accent,
+  },
+  resumeChipEyebrow: { fontFamily: fonts.strong, fontSize: type.micro - 1, letterSpacing: 1.2, color: colors.accentInk, textTransform: 'uppercase', opacity: 0.65 },
+  resumeChipName: { flexShrink: 1, fontFamily: fonts.strong, fontSize: type.caption, color: colors.accentInk },
+  resumeChipArrow: { fontFamily: fonts.strong, fontSize: type.caption, color: colors.accentInk },
+  stripLabel: { fontFamily: fonts.strong, fontSize: type.micro - 1, letterSpacing: 1.2, color: colors.faint, textTransform: 'uppercase', marginLeft: space.xs },
+  stripPills: { gap: 6, alignItems: 'center' },
+  stripPill: {
+    height: 28, paddingHorizontal: space.md, justifyContent: 'center', borderRadius: radius.pill, maxWidth: 180,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line,
+  },
+  stripPillText: { fontFamily: fonts.body, fontSize: type.caption, color: colors.muted },
   section: { fontFamily: fonts.strong, fontSize: type.micro, letterSpacing: 1.6, color: colors.faint, textTransform: 'uppercase', marginTop: space.xl, marginBottom: space.md },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   pill: { paddingHorizontal: space.lg, height: 36, justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line, maxWidth: 200 },
@@ -286,4 +355,8 @@ const styles = StyleSheet.create({
   cardIndex: { fontFamily: fonts.displayThin, fontSize: type.title, color: colors.accent },
   cardName: { fontFamily: fonts.display, fontSize: type.title - 2, lineHeight: (type.title - 2) * 1.12, color: colors.text },
   cardMeta: { fontFamily: fonts.body, fontSize: type.caption, color: colors.muted, marginTop: 4 },
+  cardCompact: { height: 124, padding: space.md },
+  cardIndexCompact: { fontSize: type.heading },
+  cardNameCompact: { fontSize: type.heading, lineHeight: type.heading * 1.15 },
+  cardMetaCompact: { fontSize: type.micro + 1, marginTop: 2 },
 })

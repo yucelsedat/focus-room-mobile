@@ -73,7 +73,7 @@ function EditorHost({ mediaId, onGo }) {
     const t = setTimeout(() => setWaited(true), 1500)
     return () => {
       clearTimeout(t)
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {})
+      ScreenOrientation.unlockAsync().catch(() => {}) // telefonun tuttuğu yöne döner
     }
   }, [])
 

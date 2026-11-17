@@ -1,21 +1,20 @@
 // Dokunulan panelin detay sayfası. Web'de panellerin çoğu yerinde (DOM) açılır;
 // mobilde içerik native olarak burada okunur. Düzenleme şimdilik masaüstünde.
 import { useEffect, useState } from 'react'
-import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
+import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useStore } from '../store/useStore'
 import { assetUrl } from '../api/client'
 import { CLIP_TYPES, removeTileMedia, toggleClip } from '../api/tileClipboard'
-import { Sheet, SectionLabel } from './Sheet'
+import { Sheet, SectionLabel, useSheetLayout } from './Sheet'
 import { RoomRow } from './RoomRow'
 import { metaFor, parseJson, stripHtml, stripMarkdown, youtubeThumb } from '../scene/media'
 import { colors, fonts, type, space, radius } from '../theme'
 import { Icon } from './Icon'
 import { formatTime, probeVideo } from '../video/video'
 
-function FitImage({ uri, maxHeight = 420 }) {
-  const { width } = useWindowDimensions()
+function FitImage({ uri }) {
+  const { contentWidth: w, mediaMaxHeight: maxHeight } = useSheetLayout()
   const [ar, setAr] = useState(16 / 10)
-  const w = width - space.lg * 2
   return (
     <Image
       source={{ uri }}
@@ -180,8 +179,8 @@ function CanvasDetail({ item, onGo }) {
   const images = items.filter((i) => i.type === 'image' && i.url)
   const links = items.filter((i) => ['link', 'youtube', 'insta', 'pdf', 'music'].includes(i.type) && i.url)
   const texts = items.filter((i) => i.type === 'text' && stripHtml(i.content))
-  const { width } = useWindowDimensions()
-  const thumb = (width - space.lg * 2 - space.sm * 2) / 3
+  const { contentWidth } = useSheetLayout()
+  const thumb = (contentWidth - space.sm * 2) / 3
   return (
     <>
       {rooms.length > 0 && (

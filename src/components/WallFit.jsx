@@ -1,15 +1,15 @@
 // Duvar önizlemesi: seçilen görselin duvarda kaplayacağı tile'lar.
 // Panel, dokunulan tile'ın sol-alt köşesinden sağa ve yukarı büyür (web
 // MediaOverlay yerleşimi: içerik ((w-1)/2, (h-1)/2) kaydırılır).
-import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native'
+import { Image, StyleSheet, Text, View } from 'react-native'
+import { useSheetLayout } from './Sheet'
 import { colors, fonts, type, space, radius } from '../theme'
 
 const WALL_ROWS = 6
 const WALL_TINT = '#b0623f' // duvar.jpg fayans tonu
 
 export function WallFit({ row = 0, width, height, uri, color }) {
-  const { width: screenW } = useWindowDimensions()
-  const avail = screenW - space.lg * 2
+  const { contentWidth: avail } = useSheetLayout()
   const cols = Math.max(8, Math.ceil(width) + 2)
   const rows = Math.max(WALL_ROWS, Math.ceil(row + height))
   const cell = Math.min(avail / cols, 190 / rows)

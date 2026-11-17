@@ -1,4 +1,5 @@
-// Oda içi arayüz (dikey): üstte oda adı + geri + odalar; sağda uçma düğmeleri.
+// Oda içi arayüz (dikey / yatay): üstte oda adı + geri + odalar; sağda uçma düğmeleri.
+// Yatayda kenar boşlukları çentiği / kamera deliğini (insets.left/right) hesaba katar.
 // Ortadaki alan dokunmatik katmana (bakış) bırakılır, joystick alt-solda belirir.
 import { useRef } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
@@ -6,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useStore } from '../store/useStore'
 import { input } from '../controls/input'
 import { clipLabel } from '../api/tileClipboard'
+import { useScreen } from '../layout'
 import { colors, fonts, type, space, radius } from '../theme'
 
 function HoldButton({ label, a11y, onDown, onUp, onDoubleTap }) {
@@ -31,6 +33,7 @@ function HoldButton({ label, a11y, onDown, onUp, onDoubleTap }) {
 
 export function RoomHUD({ onBack }) {
   const insets = useSafeAreaInsets()
+  const { landscape } = useScreen()
   const name = useStore((s) => s.currentRoomName)
   const loading = useStore((s) => s.loading)
   const error = useStore((s) => s.error)
@@ -41,7 +44,7 @@ export function RoomHUD({ onBack }) {
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <View style={[styles.top, { paddingTop: insets.top + space.sm }]} pointerEvents="box-none">
+      <View style={[styles.top, { paddingTop: insets.top + space.sm, paddingLeft: insets.left + space.md, paddingRight: insets.right + space.md }]} pointerEvents="box-none">
         <Pressable onPress={onBack} style={styles.chip} hitSlop={8} accessibilityRole="button" accessibilityLabel="Dünyalara dön">
           <Text style={styles.chipText}>‹</Text>
         </Pressable>
@@ -78,7 +81,7 @@ export function RoomHUD({ onBack }) {
         </View>
       )}
 
-      <View style={[styles.flyCol, { bottom: insets.bottom + 110 }]} pointerEvents="box-none">
+      <View style={[styles.flyCol, { right: insets.right + space.md, bottom: insets.bottom + (landscape ? 48 : 110) }]} pointerEvents="box-none">
         <HoldButton label="▲" a11y="Yüksel" onDown={() => { input.flyUp = true }} onUp={() => { input.flyUp = false }} />
         <HoldButton
           label="▼"
@@ -89,7 +92,7 @@ export function RoomHUD({ onBack }) {
         />
       </View>
 
-      <Text style={[styles.hint, { bottom: insets.bottom + space.md }]} pointerEvents="none">
+      <Text style={[styles.hint, { bottom: insets.bottom + space.md, left: insets.left + space.lg, right: insets.right + space.lg }]} pointerEvents="none">
         sol altta sürükle: yürü · ekranı kaydır: bak · panele dokun: aç · zemine çift dokun: ışınlan
       </Text>
     </View>
@@ -99,7 +102,7 @@ export function RoomHUD({ onBack }) {
 const glass = { backgroundColor: 'rgba(12,12,15,0.62)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.12)' }
 
 const styles = StyleSheet.create({
-  top: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md },
+  top: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   chip: { ...glass, height: 44, minWidth: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   chipText: { color: colors.text, fontSize: 28, fontFamily: fonts.bodyThin, marginTop: -4 },
   titleWrap: { ...glass, flex: 1, height: 44, borderRadius: radius.pill, paddingHorizontal: space.lg, justifyContent: 'center' },
@@ -107,12 +110,12 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.display, fontSize: type.heading - 2, color: colors.text, marginTop: -1 },
   roomsChip: { paddingHorizontal: space.lg },
   roomsText: { fontFamily: fonts.strong, fontSize: type.caption, color: colors.text },
-  flyCol: { position: 'absolute', right: space.md, gap: space.md },
+  flyCol: { position: 'absolute', gap: space.md },
   fly: { ...glass, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   flyPressed: { backgroundColor: 'rgba(0,242,255,0.22)', borderColor: colors.accent },
   flyText: { color: colors.text, fontSize: 18 },
   hint: {
-    position: 'absolute', left: space.lg, right: space.lg, textAlign: 'center',
+    position: 'absolute', textAlign: 'center',
     fontFamily: fonts.body, fontSize: type.micro, color: 'rgba(242,239,233,0.45)', letterSpacing: 0.3,
   },
   loading: { position: 'absolute', top: '48%', alignSelf: 'center' },

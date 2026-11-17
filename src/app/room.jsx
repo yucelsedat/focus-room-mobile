@@ -1,4 +1,4 @@
-// Oda ekranı (dikey). 3D sahne tam ekran; üstünde dokunmatik katman ve HUD.
+// Oda ekranı (dikey / yatay). 3D sahne tam ekran; üstünde dokunmatik katman ve HUD.
 import { useCallback, useEffect } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'

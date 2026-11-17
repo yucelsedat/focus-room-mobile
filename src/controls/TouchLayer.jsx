@@ -1,7 +1,8 @@
-// Dikey ekran dokunmatik katmanı (tam ekran, sayfa koordinatları — Canvas da tam
+// Dokunmatik katman (dikey / yatay) (tam ekran, sayfa koordinatları — Canvas da tam
 // ekran olduğundan pick() ile aynı uzay). Tek katman, çoklu dokunuşu
 // identifier ile ayırır (aynı anda yürü + bak):
-//  - Alt-sol bölgede başlayan dokunuş → yüzen joystick (başladığı yer merkez)
+//  - Alt-sol bölgede başlayan dokunuş → yüzen joystick (başladığı yer merkez). Yatayda
+//    ekran kısa olduğundan bölge daha yukarıdan başlar, sol başparmağın alanıyla sınırlı kalır.
 //  - Diğer her dokunuş → sürükleyerek bakış
 //  - Kısa dokunuş → panel seç (detay sayfası); zemine çift dokunuş → oraya ışınlan
 //  - Canvas'ta: oda çipi → o odaya git, link/YouTube/PDF/müzik kartı → tarayıcıda aç
@@ -32,7 +33,10 @@ export function TouchLayer({ onGo }) {
   const [joyKnob] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }))
   const [joyOpacity] = useState(() => new Animated.Value(0))
 
-  const inJoystickZone = (x, y) => x < size.current.w * 0.55 && y > size.current.h * 0.58
+  const inJoystickZone = (x, y) => {
+    const { w, h } = size.current
+    return w > h ? x < w * 0.4 && y > h * 0.4 : x < w * 0.55 && y > h * 0.58
+  }
 
   const onTap = (x, y) => {
     const now = Date.now()

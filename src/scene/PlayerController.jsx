@@ -107,7 +107,8 @@ export function PlayerController() {
   const teleporting = useRef(false)
   const tmp = useRef({ fwd: new THREE.Vector3(), side: new THREE.Vector3(), dir: new THREE.Vector3(), euler: new THREE.Euler(0, 0, 0, 'YXZ') })
 
-  // Dikey ekran: yatay FOV'u sabit tutacak dikey FOV
+  // Dikeyde yatay FOV'u sabit tutacak dikey FOV; yatayda (geniş en-boy) dikey FOV 60°'de
+  // durur, yatay görüş web'deki gibi genişler. Ekran dönünce size değişir, yeniden hesaplanır.
   useEffect(() => {
     const aspect = size.width / Math.max(1, size.height)
     const h = THREE.MathUtils.degToRad(TARGET_HFOV)

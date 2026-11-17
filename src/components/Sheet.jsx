@@ -1,17 +1,50 @@
-// Alttan açılan sayfa (dikey ekranda başparmak erişimine uygun)
+// Alttan açılan sayfa (dikey ekranda başparmak erişimine uygun). Yatayda sağdan açılan,
+// tam yükseklikte yan panel olur: sahnenin solu görünür kalır, dikey alan kısa kalmaz.
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { sidePanelWidth, useScreen } from '../layout'
 import { colors, fonts, type, space, radius } from '../theme'
+
+// iOS'ta Modal varsayılan olarak yalnız dikeydir; sahne yataydayken de açılabilmeli
+const ORIENTATIONS = ['portrait', 'portrait-upside-down', 'landscape', 'landscape-left', 'landscape-right']
+
+// Sayfa içeriğinin kullanılabilir genişliği (görsel, ızgara, duvar önizlemesi buna göre
+// ölçülür). Ekran boyutundan hesaplanır: sayfanın dışında çağrılan hook'larda da aynı sonuç.
+export function useSheetLayout() {
+  const { width, height, landscape } = useScreen()
+  const panelW = landscape ? sidePanelWidth(width) : width
+  return {
+    landscape,
+    panelW,
+    contentWidth: panelW - space.lg * 2,
+    mediaMaxHeight: landscape ? Math.round(height * 0.55) : 420,
+  }
+}
 
 export function Sheet({ visible, onClose, eyebrow, title, children, scroll = true, footer, tall = false }) {
   const insets = useSafeAreaInsets()
+  const { landscape, panelW } = useSheetLayout()
   const Body = scroll ? ScrollView : View
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView style={styles.wrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType={landscape ? 'fade' : 'slide'}
+      onRequestClose={onClose}
+      statusBarTranslucent
+      supportedOrientations={ORIENTATIONS}
+    >
+      <KeyboardAvoidingView style={[styles.wrap, landscape && styles.wrapSide]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Kapat" />
-        <View style={[styles.sheet, tall && styles.tall, { paddingBottom: (footer ? space.md : insets.bottom + space.lg) }]}>
-          <View style={styles.grip} />
+        <View
+          style={[
+            styles.sheet,
+            tall && styles.tall,
+            landscape && [styles.side, { width: panelW + insets.right, paddingTop: insets.top, paddingRight: space.lg + insets.right }],
+            { paddingBottom: (footer ? space.md : insets.bottom + space.lg) },
+          ]}
+        >
+          {!landscape && <View style={styles.grip} />}
           <View style={styles.head}>
             <View style={{ flex: 1 }}>
               {!!eyebrow && <Text style={styles.eyebrow}>{eyebrow}</Text>}
@@ -41,6 +74,7 @@ export function SectionLabel({ children }) {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: colors.scrim },
+  wrapSide: { flexDirection: 'row' },
   sheet: {
     maxHeight: '82%',
     backgroundColor: colors.surface,
@@ -49,6 +83,15 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
     paddingHorizontal: space.lg,
+  },
+  // Yatay: sağ kenara yapışık, tam yükseklik
+  side: {
+    height: '100%',
+    maxHeight: '100%',
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: radius.lg,
+    borderTopWidth: 0,
+    borderLeftWidth: StyleSheet.hairlineWidth,
   },
   grip: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.line, marginTop: space.sm },
   head: { flexDirection: 'row', alignItems: 'flex-start', paddingTop: space.lg, paddingBottom: space.md },

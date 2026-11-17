@@ -10,8 +10,9 @@ import { useStore } from '../store/useStore'
 import { colors } from '../theme'
 
 SplashScreen.preventAutoHideAsync().catch(() => {})
-// Uygulama dikey; yalnız canvas düzenleyici yataya geçer (app.json orientation: default)
-ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {})
+// Uygulama dikey ve yatayda çalışır (app.json orientation: default). Canvas düzenleyici
+// yataya, video oynatıcı videonun yönüne kilitlenir; kapanınca kilit kalkar.
+ScreenOrientation.unlockAsync().catch(() => {})
 
 export default function RootLayout() {
   // Yalnızca kullanılan ağırlıklar: paket index'leri tüm varyantları (≈90 TTF) pakete sokar
