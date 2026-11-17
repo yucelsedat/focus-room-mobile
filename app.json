@@ -69,8 +69,19 @@
       ],
       "expo-video",
       "expo-status-bar",
-      "./plugins/withGradleLimits"
+      "./plugins/withGradleLimits",
+      "expo-sharing",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Söylediklerini deftere yazabilmek için mikrofon kullanılır.",
+          "speechRecognitionPermission": "Söylediklerin yazıya çevrilip notuna eklenir."
+        }
+      ]
     ],
+    "experiments": {
+      "reactCompiler": true
+    },
     "extra": {
       "router": {
         "asyncRoutes": {

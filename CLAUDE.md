@@ -22,6 +22,21 @@ yalnız HTTP API ile konuşur.
 - `src/shared/` (roomConfig, roomTree) web ile ortak oda modelinin kopyasıdır; kanonik kopya
   `focus-room-main/src/utils`. Biri değişirse diğeri de güncellenmeli.
 
+## Kitaplık (all-books)
+
+- Ana sayfa (`/`) Seyir Defteri kitaplığıdır; odalar `/worlds`'te (web'deki all-books ile aynı).
+  Ekranlar `src/app/{index,new-notebook,edit-notebook/[id],notebook}.jsx`, kod `src/library/`.
+- Kaynak: seyir defteri RN projesi (`~/projects/MOBİL/seyir defteri`, TS) JS'e çevrilerek alındı;
+  web karşılığı `focus-room-main/src/pages/library` (`ALL-BOOKS-PLAN.md`). Kapsam web'le aynı:
+  yalnız PDF defteri; ajanda / not defteri formda "yakında", Pano / Takvim / Ayraçlar sekmeleri kapalı.
+- Veri: `src/library/db.js` → sunucunun `/api/library/*` uçları (web'le ortak veri). Orijinal
+  `db/database.ts` imzaları korunur, yalnız `db` parametresi yok. Aynı kayda giden yazmalar
+  `latest()` ile sıralı ve birleşerek gider (her tuşta kayıt ağda sırasız varmasın).
+- Ekler sunucuda `public/uploads/shelf/` (`src/library/lib/attachments.js`); blokta yalnız dosya adı.
+- `expo-sqlite/kv-store` yerine `src/library/lib/storage.js` (AsyncStorage + bellek, `library.` önekli).
+- React Compiler yalnız kitaplık dosyalarında açık (`babel.config.js` `sources`); oda kodu dışarıda.
+- Kitaplık ekranları dikeye kilitli, odalar serbest (`src/app/_layout.jsx`).
+
 ## Derleme
 
 - Android'de uygulama Expo Go ile değil, kendi geliştirme derlemesiyle (expo-dev-client) çalışır:

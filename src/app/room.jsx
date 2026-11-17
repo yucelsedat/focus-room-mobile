@@ -42,7 +42,7 @@ export default function RoomScreen() {
       <RoomScene />
       <TouchLayer onGo={go} />
       <Crosshair />
-      <RoomHUD onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
+      <RoomHUD onBack={() => (router.canGoBack() ? router.back() : router.replace('/worlds'))} />
       <RoomSheet onGo={go} />
       <MediaSheet onGo={go} />
       <TileSheet />
