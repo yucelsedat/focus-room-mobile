@@ -80,7 +80,7 @@ export function RoomSheet({ onGo }) {
           if (currentDeleted) {
             close()
             if (fallback) onGo(fallback.id, fallback.name)
-            else router.replace('/')
+            else router.replace('/worlds')
             return
           }
           setSettings(null)

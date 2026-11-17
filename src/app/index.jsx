@@ -1,362 +1,500 @@
-// Giriş: sunucuyu otomatik bulur, ardından dünya (kök oda) seçimi.
-// Web WorldSelect'in mobil karşılığı. Adres elle girilmez; yalnızca otomatik
-// arama başarısız olursa son çare olarak elle giriş sunulur.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  ActivityIndicator, FlatList, Image, KeyboardAvoidingView, Platform, Pressable,
-  RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
-} from 'react-native'
+import Ionicons from '@expo/vector-icons/Ionicons'
 import { router, useFocusEffect } from 'expo-router'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { assetUrl, normalizeServerUrl, saveServerUrl } from '../api/client'
-import { discoverServer, probe } from '../api/discovery'
-import { refreshRooms } from '../api/loadRoom'
-import { getVisits, lastVisit, orderWorlds, recentRooms, worldsOf } from '../api/visits'
-import { useStore } from '../store/useStore'
-import { useScreen } from '../layout'
-import { colors, fonts, type, space, radius } from '../theme'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 
-function openRoom(room) {
-  router.push({ pathname: '/room', params: { id: room.id, name: room.name } })
-}
+import { discoverServer } from '../api/discovery'
+import { AddButton } from '../library/components/AddButton'
+import { Bookshelf } from '../library/components/Bookshelf'
+import { BottomNav } from '../library/components/BottomNav'
+import { CategoryManager } from '../library/components/CategoryManager'
+import { CategoryTabs } from '../library/components/CategoryTabs'
+import { TornPaperMenu } from '../library/components/TornPaperMenu'
+import {
+  deleteNotebook,
+  GENERAL_CATEGORY_ID,
+  getCategories,
+  getNotebooks,
+  setNotebookCategory,
+  setNotebookShelves,
+} from '../library/db'
+import { forgetNotebook } from '../library/lib/notebookState'
+import { DEFAULT_SHELF_COUNT, settleOverflow } from '../library/lib/shelves'
+import { colors, fonts, HAND_TAIL, handTailWidth, shelf, type } from '../library/theme'
 
-// Son çare: otomatik arama sunucuyu bulamadıysa
-function ManualForm({ onConnected }) {
-  const [value, setValue] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
+// Ana sayfa: defterlerin raflarda durduğu kitaplıklar. Her kategorinin kendi kitaplığı vardır;
+// kitaplıklar yan yana durur, sola sağa kaydırınca ya da başlığın altındaki sekmelerden birine
+// basınca öbür kategoriye geçilir (açılışta Genel). Kitaplığın rafları aşağı doğru uzar, aşağı
+// yukarı kaydırılır. Sağ üstteki kalemle düzenlemeye geçilir; düzenlerken defterler basılı tutulup
+// sürüklenerek yer değiştirir.
+export default function LibraryScreen() {
+  const pagerRef = useRef(null)
+  const shelfRefs = useRef(new Map())
+  const [notebooks, setNotebooks] = useState([])
+  const [categories, setCategories] = useState([])
+  const [activeId, setActiveId] = useState(GENERAL_CATEGORY_ID)
+  const [managing, setManaging] = useState(false)
+  const [editing, setEditing] = useState(false)
+  // Basılı tutulan defter; silme sorusu ve kategori seçimi aynı kâğıtta sorulur. Kâğıt
+  // kapanırken yazısı silinmesin diye seçili defter kapanınca da tutulur.
+  const [selected, setSelected] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuMode, setMenuMode] = useState('main')
+  // Kitaplıkların yan yana durduğu alanın eni; her kitaplık bu kadar yer kaplar
+  const [pageWidth, setPageWidth] = useState(0)
+  // Bir defter sürüklenirken kitaplıklar arasında geçilmez
+  const [dragging, setDragging] = useState(false)
+  // Görünen kitaplık ve onun çizildiği en
+  const shown = useRef({ page: 0, width: 0 })
+  // Kitaplık focus-room sunucusunda durur: 'ok' | 'searching' (sunucu aranıyor) | 'offline'
+  const [connection, setConnection] = useState('ok')
+  // Son yüklemenin numarası; ekrandan çıkınca ya da yeniden yüklenince eski yanıt yok sayılır
+  const loadToken = useRef(0)
 
-  const connect = async () => {
-    const base = normalizeServerUrl(value)
-    if (!base) return
-    setBusy(true)
-    setError(null)
-    if (await probe(base, { timeout: 5000 })) {
-      onConnected(await saveServerUrl(base))
-    } else {
-      setError('Bu adreste Focus Room sunucusu yanıt vermedi.')
-    }
-    setBusy(false)
-  }
-
-  return (
-    <View style={styles.form}>
-      <Text style={styles.label}>Adresi elle gir</Text>
-      <View style={styles.inputRow}>
-        <TextInput
-          value={value}
-          onChangeText={setValue}
-          placeholder="192.168.1.20"
-          placeholderTextColor={colors.faint}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          returnKeyType="go"
-          onSubmitEditing={connect}
-          style={styles.input}
-          accessibilityLabel="Sunucu adresi"
-        />
-        <Pressable onPress={connect} disabled={busy || !value.trim()} style={[styles.connect, (busy || !value.trim()) && { opacity: 0.5 }]} accessibilityRole="button">
-          {busy ? <ActivityIndicator color={colors.accentInk} /> : <Text style={styles.connectText}>Bağlan</Text>}
-        </Pressable>
-      </View>
-      {!!error && <Text style={styles.error}>{error}</Text>}
-    </View>
-  )
-}
-
-// compact: yataydaki dörtlü grid hücresi (daha alçak, daha küçük yazı)
-function WorldCard({ world, index, width, compact }) {
-  const cover = world.coverImage ? assetUrl(world.coverImage) : null
-  return (
-    <Pressable onPress={() => openRoom(world)} style={({ pressed }) => [styles.card, compact && styles.cardCompact, width != null && { width }, pressed && { transform: [{ scale: 0.985 }] }]} accessibilityRole="button">
-      {cover && <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: cover ? 'rgba(8,8,10,0.55)' : 'transparent' }]} />
-      <Text style={[styles.cardIndex, compact && styles.cardIndexCompact]}>{String(index + 1).padStart(2, '0')}</Text>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Text style={[styles.cardName, compact && styles.cardNameCompact]} numberOfLines={2}>{world.name}</Text>
-        <Text style={[styles.cardMeta, compact && styles.cardMetaCompact]} numberOfLines={1}>
-          {world.children?.length ? `${world.children.length} alt oda` : 'Tek oda'}
-          {world.roomType === 'cadde' ? ' · cadde' : ''}
-        </Text>
-      </View>
-    </Pressable>
-  )
-}
-
-export default function Home() {
-  const insets = useSafeAreaInsets()
-  // Yatay: dünyalar dörtlü grid (soldan sağa), "Kaldığın yer" bir grid hücresi genişliğinde,
-  // yanında geniş "Son odalar" alanı. Kenar boşlukları çentiği / kamera deliğini hesaba katar.
-  const { width, landscape } = useScreen()
-  const cols = landscape ? 4 : 1
-  const pad = { paddingLeft: insets.left + space.lg, paddingRight: insets.right + space.lg }
-  const cardW = cols > 1 ? (width - pad.paddingLeft - pad.paddingRight - space.md * (cols - 1)) / cols : null
-  // Dünyalar da alt odalar da store'daki tek listeden (/api/rooms): oda ekranı ve oda
-  // oluşturma akışı bu listeyi tazeler, yeni / silinen odalar sıralamaya hemen yansır.
-  const rooms = useStore((s) => s.rooms)
-  const setRooms = useStore((s) => s.setRooms)
-  // phase: 'searching' → 'ready' | 'notfound'
-  const [phase, setPhase] = useState('searching')
-  const [status, setStatus] = useState('Sunucu aranıyor')
-  const [attempt, setAttempt] = useState(0)
-  const [server, setServer] = useState(null)
-  // Sıra cihazın kendi ziyaret geçmişinden (visits.js), sunucunun lastActiveAt'inden değil
-  const [visits, setVisits] = useState([])
-  const loadedFor = useRef(null) // listesi en az bir kez yüklenmiş sunucu
-  const [loading, setLoading] = useState(false)
-  const [manual, setManual] = useState(false)
-
-  // Otomatik bulma: açılışta ve "tekrar ara"da (attempt artar)
-  useEffect(() => {
-    let alive = true
-    discoverServer({ onStatus: (s) => alive && setStatus(s) }).then((url) => {
-      if (!alive) return
-      if (url) {
-        setLoading(true)
-        setServer(url)
-        setPhase('ready')
-      } else {
-        setPhase('notfound')
-      }
-    })
-    return () => { alive = false }
-  }, [attempt])
-
-  const rediscover = useCallback(() => {
-    setStatus('Sunucu aranıyor')
-    setPhase('searching')
-    setManual(false)
-    setAttempt((a) => a + 1)
+  const loadLibrary = useCallback(() => {
+    const token = ++loadToken.current
+    const stale = () => token !== loadToken.current
+    const load = () => Promise.all([getNotebooks(), getCategories()])
+    load()
+      .catch(async () => {
+        // Sunucu adresi yoksa ya da yanıt vermiyorsa sunucu yeniden aranır (odalardaki gibi)
+        if (stale()) throw new Error('iptal')
+        setConnection('searching')
+        if (!(await discoverServer())) throw new Error('Sunucu bulunamadı')
+        return load()
+      })
+      .then(([books, list]) => {
+        if (stale()) return
+        setConnection('ok')
+        setNotebooks(books)
+        setCategories(list)
+        // Seçili kategori bu arada silinmişse Genel'e dönülür
+        setActiveId((id) => (list.some((c) => c.id === id) ? id : GENERAL_CATEGORY_ID))
+      })
+      .catch(() => {
+        if (!stale()) setConnection('offline')
+      })
   }, [])
 
-  // İlk açılış ve odadan her dönüş: geçmiş + oda listesi tazelenir (oda, web'de ya da
-  // telefonda eklenmiş / silinmiş olabilir). Liste elde varken geçici bir ağ hatası
-  // arama ekranına atmaz; yalnızca bu sunucudan hiç liste alınamadıysa yeniden aranır.
-  useFocusEffect(useCallback(() => {
-    if (!server) return undefined
-    let alive = true
-    if (loadedFor.current !== server) setRooms([]) // başka sunucunun odaları görünmesin
-    getVisits().then((v) => alive && setVisits(v))
-    refreshRooms()
-      .then(() => { loadedFor.current = server }, () => alive && loadedFor.current !== server && rediscover())
-      .finally(() => alive && setLoading(false))
-    return () => { alive = false }
-  }, [server, setRooms, rediscover]))
+  // Oluşturma ekranından dönünce yeni defter de rafta görünsün. Kitaplıklar her açılışta en
+  // üstünden başlar; başka ekrana geçilince düzenleme biter.
+  useFocusEffect(
+    useCallback(() => {
+      for (const shelf of shelfRefs.current.values()) shelf.scrollToTop(false)
+      loadLibrary()
+      return () => {
+        loadToken.current++
+        setEditing(false)
+      }
+    }, [loadLibrary]),
+  )
 
-  const worlds = useMemo(() => orderWorlds(worldsOf(rooms), rooms, visits), [rooms, visits])
-  const recent = useMemo(() => recentRooms(rooms, visits), [rooms, visits])
-  const last = useMemo(() => lastVisit(rooms, visits), [rooms, visits])
-
-  // Aşağı çekip yenile — sunucu kaybolduysa (IP değişti vb.) yeniden ara
-  const refresh = useCallback(() => {
-    setLoading(true)
-    getVisits().then(setVisits)
-    refreshRooms().catch(rediscover).finally(() => setLoading(false))
-  }, [rediscover])
-
-  const onManualConnected = (url) => {
-    setLoading(true)
-    setServer(url)
-    setPhase('ready')
+  // Kategoriler ayarlanınca; seçili kategori silinmişse Genel'e dönülür
+  function updateCategories(list) {
+    setCategories(list)
+    setActiveId((id) => (list.some((c) => c.id === id) ? id : GENERAL_CATEGORY_ID))
   }
 
-  if (phase !== 'ready') {
-    const searching = phase === 'searching'
-    return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.list}>
-        <ScrollView contentContainerStyle={[styles.root, pad, { paddingTop: insets.top + space.xxl, paddingBottom: insets.bottom + space.xl }]} keyboardShouldPersistTaps="handled">
-          <Text style={styles.heroThin}>Focus</Text>
-          <Text style={styles.hero}>Room</Text>
-          {searching ? (
-            <View style={styles.searchRow}>
-              <ActivityIndicator color={colors.accent} />
-              <Text style={styles.searchText}>{status}…</Text>
-            </View>
-          ) : (
-            <>
-              <Text style={styles.lede}>Sunucu bulunamadı.</Text>
-              <Text style={styles.help}>
-                Bilgisayarda proje kökünde {'"npm run dev:backend"'} çalışıyor mu, telefon aynı Wi-Fi ağında mı?
-              </Text>
-              <Pressable onPress={rediscover} style={styles.retry} accessibilityRole="button">
-                <Text style={styles.connectText}>Tekrar ara</Text>
-              </Pressable>
-              {manual ? (
-                <ManualForm onConnected={onManualConnected} />
-              ) : (
-                <Pressable onPress={() => setManual(true)} hitSlop={8} accessibilityRole="button">
-                  <Text style={styles.link}>Adresi elle gir</Text>
-                </Pressable>
-              )}
-            </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    )
+  function selectCategory(id) {
+    if (id === activeId) return
+    setActiveId(id)
   }
 
-  const resume = last && (
-    <Pressable onPress={() => openRoom(last)} style={styles.resume} accessibilityRole="button">
-      <Text style={styles.resumeEyebrow}>Kaldığın yer</Text>
-      <Text style={styles.resumeName} numberOfLines={1}>{last.name}</Text>
-      <Text style={styles.resumeArrow}>→</Text>
-    </Pressable>
+  // Sekmeden seçilen (ya da silinip yerine Genel'e dönülen) kategorinin kitaplığına kayılır; en
+  // değişince (ör. ekran döndü) görünen kitaplık yerinde kalır
+  const activeIndex = Math.max(
+    0,
+    categories.findIndex((c) => c.id === activeId),
   )
+  useEffect(() => {
+    if (pageWidth === 0) return
+    const { page, width } = shown.current
+    if (page === activeIndex && width === pageWidth) return
+    shown.current = { page: activeIndex, width: pageWidth }
+    pagerRef.current?.scrollTo({ x: activeIndex * pageWidth, animated: width === pageWidth })
+  }, [activeIndex, pageWidth])
 
-  const recentPills = (
-    <View style={styles.pills}>
-      {recent.map((r) => (
-        <Pressable key={r.id} onPress={() => openRoom(r)} style={styles.pill} accessibilityRole="button">
-          <Text style={styles.pillText} numberOfLines={1}>{r.name}</Text>
-        </Pressable>
-      ))}
-    </View>
-  )
+  // Kaydırarak başka kitaplığa geçilince onun sekmesi seçilir
+  function onPageSettled(e) {
+    if (pageWidth === 0) return
+    const page = Math.round(e.nativeEvent.contentOffset.x / pageWidth)
+    const category = categories[page]
+    if (!category) return
+    shown.current = { page, width: pageWidth }
+    setActiveId(category.id)
+  }
 
-  // Yatay: tek ince satır — solda küçük "Kaldığın yer" hapı, yanında yatay kayan son odalar
-  const resumeStrip = (
-    <View style={styles.strip}>
-      {last && (
-        <Pressable onPress={() => openRoom(last)} style={[styles.resumeChip, { maxWidth: cardW }]} accessibilityRole="button" accessibilityLabel={`Kaldığın yer: ${last.name}`}>
-          <Text style={styles.resumeChipEyebrow}>Kaldığın yer</Text>
-          <Text style={styles.resumeChipName} numberOfLines={1}>{last.name}</Text>
-          <Text style={styles.resumeChipArrow}>→</Text>
-        </Pressable>
-      )}
-      {recent.length > 0 && (
-        <>
-          <Text style={styles.stripLabel}>Son</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={styles.stripPills}>
-            {recent.map((r) => (
-              <Pressable key={r.id} onPress={() => openRoom(r)} style={styles.stripPill} accessibilityRole="button">
-                <Text style={styles.stripPillText} numberOfLines={1}>{r.name}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </>
-      )}
-    </View>
-  )
+  const counts = useMemo(() => {
+    const result = new Map()
+    for (const notebook of notebooks) {
+      result.set(notebook.category_id, (result.get(notebook.category_id) ?? 0) + 1)
+    }
+    return result
+  }, [notebooks])
 
-  const header = (
-    <View style={{ paddingTop: insets.top + (landscape ? space.lg : space.xl) }}>
-      <View style={styles.brandRow}>
-        {landscape ? (
-          <Text style={styles.brandInlineThin}>Focus <Text style={styles.brandInline}>Room</Text></Text>
-        ) : (
-          <View>
-            <Text style={styles.heroThin}>Focus</Text>
-            <Text style={styles.hero}>Room</Text>
-          </View>
-        )}
-        <Pressable onPress={rediscover} style={styles.serverChip} accessibilityRole="button" accessibilityLabel="Sunucuyu yeniden ara">
-          <View style={[styles.statusDot, { backgroundColor: colors.link }]} />
-          <Text style={styles.serverText} numberOfLines={1}>{server.replace(/^https?:\/\//, '')}</Text>
-        </Pressable>
-      </View>
+  // Her kategorinin kitaplığı: defterleri raf raf, her rafta soldan sağa. Kitaplık en az
+  // DEFAULT_SHELF_COUNT raftır; düzenlerken en alttaki dolu rafın altında hep boş bir raf olur ki
+  // defter oraya da konabilsin.
+  const library = useMemo(() => {
+    const result = new Map()
+    for (const category of categories) result.set(category.id, [])
+    for (const notebook of notebooks) {
+      const shelves = result.get(notebook.category_id)
+      if (shelves) (shelves[notebook.shelf] ??= []).push(notebook)
+    }
+    for (const [id, shelves] of result) {
+      const length = Math.max(DEFAULT_SHELF_COUNT, shelves.length + (editing ? 1 : 0))
+      const full = Array.from({ length }, (_, i) => shelves[i] ?? [])
+      for (const books of full) books.sort((a, b) => a.position - b.position || a.id - b.id)
+      result.set(id, full)
+    }
+    return result
+  }, [notebooks, categories, editing])
+  const visibleCount = (library.get(activeId) ?? []).reduce((sum, books) => sum + books.length, 0)
 
-      {landscape ? (
-        (last || recent.length > 0) && resumeStrip
-      ) : (
-        <>
-          {resume}
-          {recent.length > 0 && (
-            <>
-              <Text style={styles.section}>Son odalar</Text>
-              {recentPills}
-            </>
-          )}
-        </>
-      )}
-      <Text style={[styles.section, landscape && { marginTop: space.lg }]}>Dünyalar · {worlds.length}</Text>
-    </View>
-  )
+  // Yalnızca defterin kendi kategorisindeki defterlerin yeri değişir. Dolu rafa giren defter
+  // rafın en sağındakini alttaki rafa indirir, o raf da doluysa onun en sağındakini...
+  function move(id, to) {
+    const book = notebooks.find((b) => b.id === id)
+    const shelves = book && library.get(book.category_id)
+    if (!book || !shelves) return
+    const next = shelves.map((books) => books.filter((b) => b.id !== id))
+    next[to.shelf].splice(to.index, 0, book)
+    settleOverflow(next, to.shelf)
+    const slots = new Map()
+    next.forEach((books, s) => books.forEach((b, position) => slots.set(b.id, { shelf: s, position })))
+    setNotebooks((prev) => prev.map((b) => (slots.has(b.id) ? { ...b, ...slots.get(b.id) } : b)))
+    setNotebookShelves(next.map((books) => books.map((b) => b.id)))
+  }
+
+  // Defter başka kategoriye geçer, o kategorinin raflarının sonuna konur
+  async function moveSelectedTo(categoryId) {
+    if (!selected) return
+    const { id } = selected
+    setMenuOpen(false)
+    const slot = await setNotebookCategory(id, categoryId)
+    if (slot) setNotebooks((prev) => prev.map((b) => (b.id === id ? { ...b, ...slot } : b)))
+  }
+
+  function openNotebook(notebook) {
+    router.push({ pathname: '/notebook', params: { id: String(notebook.id) } })
+  }
+
+  function select(notebook) {
+    setMenuMode('main')
+    setSelected(notebook)
+    setMenuOpen(true)
+  }
+
+  async function removeSelected() {
+    if (!selected) return
+    const { id } = selected
+    setMenuOpen(false)
+    await deleteNotebook(id)
+    await forgetNotebook(id)
+    setNotebooks((prev) => prev.filter((n) => n.id !== id))
+  }
+
+  // Menüden bir yere gidilince kâğıt kapanır
+  function andClose(action) {
+    return () => {
+      if (!selected) return
+      setMenuOpen(false)
+      action(selected)
+    }
+  }
+
+  const menuOptions =
+    menuMode === 'delete'
+      ? [
+          { label: 'Evet, sil', danger: true, onPress: removeSelected },
+          { label: 'Vazgeç', onPress: () => setMenuMode('main') },
+        ]
+      : menuMode === 'category'
+        ? categories.map((category) => ({
+            label: category.name,
+            checked: category.id === selected?.category_id,
+            onPress: () => moveSelectedTo(category.id),
+          }))
+        : [
+            { label: 'Aç', onPress: andClose(openNotebook) },
+            {
+              label: 'Düzenle',
+              onPress: andClose((notebook) =>
+                router.push({
+                  pathname: '/edit-notebook/[id]',
+                  params: { id: String(notebook.id) },
+                }),
+              ),
+            },
+            ...(categories.length > 1 ? [{ label: 'Kategori', onPress: () => setMenuMode('category') }] : []),
+            { label: 'Sil', danger: true, onPress: () => setMenuMode('delete') },
+          ]
+
+  const menuTitle =
+    menuMode === 'delete'
+      ? `“${selected?.title}” silinsin mi?`
+      : menuMode === 'category'
+        ? 'Hangi kategoride?'
+        : (selected?.title ?? '')
+
+  // Yeri değişecek en az iki defter olunca düzenlenebilir
+  const canEdit = editing || visibleCount > 1
 
   return (
-    <FlatList
-      key={`cols-${cols}`} // numColumns yerinde değişemez: yön değişince liste yeniden kurulur
-      style={styles.list}
-      contentContainerStyle={[pad, { paddingBottom: insets.bottom + space.xxl }]}
-      data={worlds}
-      keyExtractor={(w) => w.id}
-      numColumns={cols}
-      columnWrapperStyle={cols > 1 ? { gap: space.md } : undefined}
-      ListHeaderComponent={header}
-      renderItem={({ item, index }) => <WorldCard world={item} index={index} width={cardW} compact={landscape} />}
-      ListEmptyComponent={loading ? <ActivityIndicator color={colors.accent} style={{ marginTop: space.xl }} /> : null}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={colors.accent} />}
-    />
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        {/* Kitaplıktan 3B odalara (eski ana sayfa) */}
+        <Pressable
+          onPress={() => router.push('/worlds')}
+          accessibilityRole="button"
+          accessibilityLabel="Odalar"
+          accessibilityHint="3B odalara gider"
+          hitSlop={8}
+          style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
+        >
+          <Ionicons name="cube-outline" size={22} color={colors.onInk} style={styles.roomsIcon} />
+        </Pressable>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Kitaplık</Text>
+          {editing && <Text style={styles.subtitle}>Basılı tut, sürükle</Text>}
+        </View>
+        <Pressable
+          onPress={() => setEditing((on) => !on)}
+          disabled={!canEdit}
+          accessibilityRole="button"
+          accessibilityLabel={editing ? 'Düzenlemeyi bitir' : 'Kitaplığı düzenle'}
+          accessibilityHint={editing ? undefined : 'Defterlerin yerini sürükleyerek değiştir'}
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.headerButton,
+            pressed && styles.headerButtonPressed,
+            !canEdit && styles.headerButtonDisabled,
+          ]}
+        >
+          <Ionicons name={editing ? 'checkmark' : 'create-outline'} size={24} color={colors.onInk} />
+        </Pressable>
+      </View>
+      <CategoryTabs
+        categories={categories}
+        activeId={activeId}
+        counts={counts}
+        onSelect={selectCategory}
+        onManage={() => setManaging(true)}
+      />
+      <View style={styles.wall} onLayout={(e) => setPageWidth(e.nativeEvent.layout.width)}>
+        <ScrollView
+          ref={pagerRef}
+          horizontal
+          pagingEnabled
+          scrollEnabled={!dragging}
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={onPageSettled}
+        >
+          {pageWidth > 0 &&
+            categories.map((category) => {
+              const shelves = library.get(category.id) ?? []
+              const empty = shelves.every((books) => books.length === 0)
+              return (
+                <View key={category.id} style={{ width: pageWidth }}>
+                  <Bookshelf
+                    ref={(handle) => {
+                      if (handle) shelfRefs.current.set(category.id, handle)
+                      else shelfRefs.current.delete(category.id)
+                    }}
+                    shelves={shelves}
+                    editing={editing}
+                    onOpen={openNotebook}
+                    onSelect={select}
+                    onMove={move}
+                    onDragChange={setDragging}
+                  >
+                    {empty && (
+                      <View style={styles.empty} pointerEvents="none">
+                        <Text style={styles.emptyTitle}>{'Bu raflar boş' + HAND_TAIL}</Text>
+                        <Text style={styles.emptyText}>
+                          {(category.id === GENERAL_CATEGORY_ID
+                            ? 'Yeni bir defter ekle'
+                            : 'Yeni defter ekle ya da bir defteri bu kategoriye taşı') + HAND_TAIL}
+                        </Text>
+                      </View>
+                    )}
+                  </Bookshelf>
+                </View>
+              )
+            })}
+        </ScrollView>
+        {connection !== 'ok' && (
+          <View style={styles.offline}>
+            {connection === 'searching' ? (
+              <>
+                <ActivityIndicator color={colors.onInk} />
+                <Text style={styles.offlineText}>{'Sunucu aranıyor…' + HAND_TAIL}</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.emptyTitle}>{'Sunucuya ulaşılamadı' + HAND_TAIL}</Text>
+                <Text style={styles.emptyText}>
+                  {'Defterler bilgisayardaki Focus Room sunucusunda durur. Sunucu çalışıyor mu, telefon aynı Wi-Fi ağında mı?' +
+                    HAND_TAIL}
+                </Text>
+                <View style={styles.offlineButtons}>
+                  <Pressable
+                    onPress={loadLibrary}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [styles.offlineButton, pressed && styles.headerButtonPressed]}
+                  >
+                    <Text style={styles.offlineButtonText}>Tekrar ara</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => router.push('/worlds')}
+                    accessibilityRole="button"
+                    accessibilityHint="Odalar ekranında sunucu adresi elle girilebilir"
+                    style={({ pressed }) => [styles.offlineButton, pressed && styles.headerButtonPressed]}
+                  >
+                    <Text style={styles.offlineButtonText}>Adresi elle gir</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </View>
+        )}
+        {!editing && connection === 'ok' && (
+          <AddButton
+            label="Yeni defter"
+            hint="Seçili kategoride defter oluşturma ekranını açar"
+            onPress={() => router.push({ pathname: '/new-notebook', params: { category: String(activeId) } })}
+          />
+        )}
+      </View>
+      <BottomNav active="library" onReselect={() => shelfRefs.current.get(activeId)?.scrollToTop(true)} />
+      <TornPaperMenu
+        visible={menuOpen}
+        title={menuTitle}
+        message={
+          menuMode === 'delete'
+            ? 'İçindeki bütün notlar da silinir.'
+            : menuMode === 'category'
+              ? selected?.title
+              : undefined
+        }
+        options={menuOptions}
+        onClose={() => setMenuOpen(false)}
+      />
+      <CategoryManager
+        visible={managing}
+        onClose={() => setManaging(false)}
+        onChange={(list) => {
+          updateCategories(list)
+          // Silinen kategorinin defterleri Genel'e geçmiş olabilir
+          getNotebooks().then(setNotebooks)
+        }}
+      />
+    </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  root: { flexGrow: 1, backgroundColor: colors.bg },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xxl },
-  searchText: { fontFamily: fonts.body, fontSize: type.heading - 2, color: colors.muted },
-  retry: { alignSelf: 'flex-start', height: 52, paddingHorizontal: space.xl, borderRadius: radius.md, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginTop: space.xl, marginBottom: space.lg },
-  link: { fontFamily: fonts.strong, fontSize: type.caption, color: colors.accent, textDecorationLine: 'underline' },
-  list: { flex: 1, backgroundColor: colors.bg },
-  brandRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  heroThin: { fontFamily: fonts.displayThin, fontSize: type.hero + 8, color: colors.text, lineHeight: (type.hero + 8) * 1.0 },
-  hero: { fontFamily: fonts.display, fontSize: type.hero + 8, color: colors.accent, lineHeight: (type.hero + 8) * 1.05, marginTop: -8 },
-  lede: { fontFamily: fonts.body, fontSize: type.heading - 2, lineHeight: 26, color: colors.muted, marginTop: space.lg, maxWidth: 320 },
-  form: { marginTop: space.xxl },
-  label: { fontFamily: fonts.strong, fontSize: type.micro, letterSpacing: 1.6, color: colors.faint, textTransform: 'uppercase', marginBottom: space.sm },
-  inputRow: { flexDirection: 'row', gap: space.sm },
-  input: {
-    flex: 1, height: 52, borderRadius: radius.md, backgroundColor: colors.surface, color: colors.text,
-    paddingHorizontal: space.lg, fontFamily: fonts.body, fontSize: type.body + 1,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line,
+  safe: {
+    flex: 1,
+    backgroundColor: colors.ink,
   },
-  connect: { height: 52, paddingHorizontal: space.xl, borderRadius: radius.md, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  connectText: { fontFamily: fonts.strong, fontSize: type.body, color: colors.accentInk },
-  help: { fontFamily: fonts.body, fontSize: type.caption, color: colors.faint, marginTop: space.sm },
-  error: { fontFamily: fonts.body, fontSize: type.caption, lineHeight: 18, color: colors.danger, marginTop: space.sm },
-  serverChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 170, marginBottom: 10,
-    paddingHorizontal: space.md, height: 32, borderRadius: radius.pill, backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line,
+  header: {
+    height: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
   },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  serverText: { fontFamily: fonts.body, fontSize: type.micro + 1, color: colors.muted },
-  resume: {
-    marginTop: space.xl, padding: space.lg, borderRadius: radius.lg, backgroundColor: colors.accent,
+  headerText: {
+    alignItems: 'center',
   },
-  resumeEyebrow: { fontFamily: fonts.strong, fontSize: type.micro, letterSpacing: 1.6, color: colors.accentInk, textTransform: 'uppercase', opacity: 0.7 },
-  resumeName: { fontFamily: fonts.display, fontSize: type.title, color: colors.accentInk, marginTop: 2, paddingRight: 40 },
-  resumeArrow: { position: 'absolute', right: space.lg, bottom: space.lg, fontFamily: fonts.strong, fontSize: type.title, color: colors.accentInk },
-  // Yatay: tek satır şerit (32 px) — "Kaldığın yer" hapı + yatay kayan son odalar
-  brandInlineThin: { fontFamily: fonts.displayThin, fontSize: type.hero - 8, lineHeight: (type.hero - 8) * 1.1, color: colors.text },
-  brandInline: { fontFamily: fonts.display, color: colors.accent },
-  strip: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
-  resumeChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: space.md,
-    borderRadius: radius.pill, backgroundColor: colors.accent,
+  headerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  resumeChipEyebrow: { fontFamily: fonts.strong, fontSize: type.micro - 1, letterSpacing: 1.2, color: colors.accentInk, textTransform: 'uppercase', opacity: 0.65 },
-  resumeChipName: { flexShrink: 1, fontFamily: fonts.strong, fontSize: type.caption, color: colors.accentInk },
-  resumeChipArrow: { fontFamily: fonts.strong, fontSize: type.caption, color: colors.accentInk },
-  stripLabel: { fontFamily: fonts.strong, fontSize: type.micro - 1, letterSpacing: 1.2, color: colors.faint, textTransform: 'uppercase', marginLeft: space.xs },
-  stripPills: { gap: 6, alignItems: 'center' },
-  stripPill: {
-    height: 28, paddingHorizontal: space.md, justifyContent: 'center', borderRadius: radius.pill, maxWidth: 180,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line,
+  headerButtonPressed: {
+    backgroundColor: 'rgba(244, 239, 230, 0.15)',
   },
-  stripPillText: { fontFamily: fonts.body, fontSize: type.caption, color: colors.muted },
-  section: { fontFamily: fonts.strong, fontSize: type.micro, letterSpacing: 1.6, color: colors.faint, textTransform: 'uppercase', marginTop: space.xl, marginBottom: space.md },
-  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  pill: { paddingHorizontal: space.lg, height: 36, justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line, maxWidth: 200 },
-  pillText: { fontFamily: fonts.strong, fontSize: type.caption, color: colors.text },
-  card: {
-    height: 148, borderRadius: radius.lg, overflow: 'hidden', padding: space.lg, marginBottom: space.md,
-    backgroundColor: colors.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.line,
+  headerButtonDisabled: {
+    opacity: 0.25,
   },
-  cardIndex: { fontFamily: fonts.displayThin, fontSize: type.title, color: colors.accent },
-  cardName: { fontFamily: fonts.display, fontSize: type.title - 2, lineHeight: (type.title - 2) * 1.12, color: colors.text },
-  cardMeta: { fontFamily: fonts.body, fontSize: type.caption, color: colors.muted, marginTop: 4 },
-  cardCompact: { height: 124, padding: space.md },
-  cardIndexCompact: { fontSize: type.heading },
-  cardNameCompact: { fontSize: type.heading, lineHeight: type.heading * 1.15 },
-  cardMetaCompact: { fontSize: type.micro + 1, marginTop: 2 },
+  roomsIcon: {
+    opacity: 0.7,
+  },
+  title: {
+    fontFamily: fonts.displayBold,
+    fontSize: type.title,
+    color: colors.onInk,
+  },
+  subtitle: {
+    fontFamily: fonts.bodyThin,
+    fontSize: type.caption,
+    letterSpacing: 1.5,
+    color: colors.onInk,
+  },
+  wall: {
+    flex: 1,
+    backgroundColor: shelf.wall,
+  },
+  // Boş kategoride rafların ortasında tebeşirle yazılmış gibi bir not
+  empty: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    gap: 4,
+  },
+  emptyTitle: {
+    fontFamily: fonts.handBold,
+    fontSize: 34,
+    color: colors.onInk,
+    marginRight: -handTailWidth(34),
+  },
+  offline: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    gap: 8,
+    backgroundColor: shelf.wall,
+  },
+  offlineText: {
+    fontFamily: fonts.hand,
+    fontSize: 24,
+    color: colors.onInk,
+    marginRight: -handTailWidth(24),
+  },
+  offlineButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  offlineButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: 'rgba(244, 239, 230, 0.5)',
+  },
+  offlineButtonText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: type.caption,
+    color: colors.onInk,
+  },
+  emptyText: {
+    fontFamily: fonts.hand,
+    fontSize: 21,
+    textAlign: 'center',
+    color: 'rgba(244, 239, 230, 0.75)',
+    marginRight: -handTailWidth(21),
+  },
 })
