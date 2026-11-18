@@ -199,7 +199,7 @@ export function NotebookForm({ mode, initial, onSubmit }) {
           hitSlop={8}
           style={({ pressed }) => [styles.back, pressed && styles.backPressed]}
         >
-          <Ionicons name="arrow-back" size={24} color={colors.onInk} />
+          <Ionicons name="arrow-back" size={24} color={shelf.ink} />
         </Pressable>
         <View style={styles.headerText}>
           <Text style={styles.title}>{mode === 'create' ? 'Yeni defter' : 'Defteri düzenle'}</Text>
@@ -240,7 +240,7 @@ export function NotebookForm({ mode, initial, onSubmit }) {
               accessibilityRole="button"
               style={({ pressed }) => [styles.button, styles.secondary, pressed && styles.pressed]}
             >
-              <Text style={styles.buttonText}>Geri</Text>
+              <Text style={[styles.buttonText, styles.secondaryText]}>Geri</Text>
             </Pressable>
           )}
           <Pressable
@@ -345,6 +345,7 @@ function CoverStep({ settings, categories, onChange, onSubmit, onManageCategorie
           onChangeText={(title) => onChange({ title })}
           placeholder="Defter adı"
           placeholderTextColor={colors.inkSoft}
+          selectionColor={colors.accent}
           accessibilityLabel="Defter adı"
           autoFocus={settings.title === ''}
           multiline
@@ -399,7 +400,7 @@ function CoverStep({ settings, categories, onChange, onSubmit, onManageCategorie
               accessibilityHint="Kategorilerin ayarlandığı kâğıdı açar"
               style={({ pressed }) => [styles.chip, styles.chipAdd, pressed && styles.pressed]}
             >
-              <Ionicons name="add" size={16} color={colors.onInk} />
+              <Ionicons name="add" size={16} color={shelf.ink} />
               <Text style={styles.chipText}>Yeni</Text>
             </Pressable>
           </View>
@@ -458,7 +459,7 @@ function PaperSample({ style, width }) {
 
   return (
     <Svg width={width} height={height}>
-      <Rect width={width} height={height} rx={3} fill={notebook.paper} />
+      <Rect width={width} height={height} rx={3} fill={notebook.paper} stroke={shelf.plankEdge} strokeWidth={1} />
       {(style === 'ruled' || style === 'oxford') &&
         Array.from({ length: rows }, (_, i) => (
           <Line
@@ -571,7 +572,7 @@ function DocumentSample({ ratio, width }) {
   const step = (height - pad * 2 - 10) / rows.length
   return (
     <Svg width={width} height={height}>
-      <Rect width={width} height={height} rx={2} fill="#FFFFFF" />
+      <Rect x={0.5} y={0.5} width={width - 1} height={height - 1} rx={2} fill="#FFFFFF" stroke={shelf.plankEdge} strokeWidth={1} />
       <Rect x={pad} y={pad} width={(width - pad * 2) * 0.55} height={5} rx={1} fill="#24292F" />
       {rows.map((w, i) =>
         w === 0 ? null : (
@@ -683,7 +684,7 @@ function YearButton({ icon, label, disabled, onPress }) {
       hitSlop={8}
       style={({ pressed }) => [styles.yearButton, pressed && styles.backPressed, disabled && styles.disabled]}
     >
-      <Ionicons name={icon} size={24} color={colors.onInk} />
+      <Ionicons name={icon} size={24} color={shelf.ink} />
     </Pressable>
   )
 }
@@ -700,7 +701,7 @@ function CheckRow({ label, caption, checked, disabled, onPress }) {
       <Ionicons
         name={checked ? 'checkbox' : 'square-outline'}
         size={24}
-        color={disabled ? 'rgba(244, 239, 230, 0.4)' : checked ? colors.accent : colors.onInk}
+        color={disabled ? shelf.faint : checked ? colors.accent : shelf.ink}
       />
       <View style={styles.checkText}>
         <Text style={[styles.checkLabel, disabled && styles.checkLabelFixed]}>{label}</Text>
@@ -754,17 +755,21 @@ function Swatch({ name, cover, band, binding, selected, onPress }) {
   )
 }
 
+// Kitaplığın açık teması: kırık beyaz zemin, üstünde yumuşak gölgeli beyaz kartlar; seçili kart
+// koyu çerçeveli
+const CARD_SHADOW = '0px 6px 16px rgba(40, 32, 24, 0.07), 0px 1px 3px rgba(40, 32, 24, 0.05)'
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: colors.ink,
+    backgroundColor: shelf.wall,
   },
   header: {
-    height: 64,
+    height: 72,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    paddingHorizontal: 14,
   },
   headerText: {
     alignItems: 'center',
@@ -777,18 +782,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backPressed: {
-    backgroundColor: 'rgba(244, 239, 230, 0.15)',
+    backgroundColor: shelf.pressed,
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: type.title,
-    color: colors.onInk,
+    fontSize: 26,
+    letterSpacing: -0.5,
+    color: shelf.ink,
   },
   stepText: {
+    marginTop: 1,
     fontFamily: fonts.bodyThin,
-    fontSize: type.caption,
-    letterSpacing: 1.5,
-    color: colors.onInk,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    color: shelf.muted,
   },
   body: {
     flex: 1,
@@ -797,7 +805,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     justifyContent: 'center',
-    gap: 28,
+    gap: 30,
     paddingHorizontal: 24,
     paddingVertical: 24,
   },
@@ -806,84 +814,98 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontFamily: fonts.displayBold,
-    fontSize: type.title,
-    color: colors.onInk,
+    fontSize: 28,
+    letterSpacing: -0.5,
+    color: shelf.ink,
   },
   caption: {
     fontFamily: fonts.bodyThin,
     fontSize: 13,
-    lineHeight: 18,
-    color: colors.onInk,
+    lineHeight: 19,
+    color: shelf.muted,
   },
   kindRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 12,
-    marginTop: 6,
+    marginTop: 8,
   },
   kindCard: {
     gap: 6,
-    padding: 12,
-    paddingTop: 18,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: 'rgba(244, 239, 230, 0.12)',
-    backgroundColor: 'rgba(244, 239, 230, 0.05)',
+    padding: 14,
+    paddingTop: 20,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: shelf.hairline,
+    backgroundColor: shelf.card,
+    boxShadow: CARD_SHADOW,
   },
   kindCover: {
     alignItems: 'center',
-    paddingBottom: 10,
+    paddingBottom: 12,
   },
   cardSoon: {
-    opacity: 0.42,
+    opacity: 0.45,
   },
   soonTag: {
     position: 'absolute',
-    top: 8,
+    top: 10,
     right: 10,
-    fontFamily: fonts.hand,
-    fontSize: 17,
-    color: colors.onInk,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    overflow: 'hidden',
+    fontFamily: fonts.bodyBold,
+    fontSize: 9,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: shelf.muted,
+    backgroundColor: shelf.wall,
     zIndex: 1,
   },
   cardSelected: {
-    borderColor: colors.accent,
-    backgroundColor: 'rgba(200, 85, 61, 0.12)',
+    borderColor: shelf.ink,
   },
   pressed: {
-    opacity: 0.8,
+    opacity: 0.75,
   },
   cardName: {
     fontFamily: fonts.bodyBold,
     fontSize: type.body,
-    color: colors.onInk,
+    color: shelf.ink,
   },
   cardCaption: {
     fontFamily: fonts.bodyThin,
     fontSize: 13,
     lineHeight: 18,
-    color: colors.onInk,
+    color: shelf.muted,
   },
   coverStep: {
     alignItems: 'center',
-    gap: 20,
+    gap: 22,
   },
   input: {
     padding: 0,
   },
   hint: {
     fontFamily: fonts.bodyThin,
-    fontSize: type.caption,
-    letterSpacing: 1,
-    color: colors.onInk,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    color: shelf.muted,
   },
+  // Renkler beyaz bir kartın içinde, altışar yan yana
   swatches: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 10,
-    maxWidth: 5 * 44 + 4 * 10,
+    gap: 6,
+    maxWidth: 6 * 44 + 5 * 6 + 2 * 12,
+    padding: 12,
+    borderRadius: 24,
+    backgroundColor: shelf.card,
+    boxShadow: CARD_SHADOW,
   },
   swatchRing: {
     width: 44,
@@ -895,15 +917,15 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   swatchRingOn: {
-    borderColor: colors.onInk,
+    borderColor: shelf.ink,
   },
   swatch: {
     width: 34,
     height: 34,
     borderRadius: 17,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(244, 239, 230, 0.25)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(22, 22, 26, 0.12)',
   },
   swatchBand: {
     position: 'absolute',
@@ -915,14 +937,15 @@ const styles = StyleSheet.create({
   categoryBlock: {
     alignSelf: 'stretch',
     alignItems: 'center',
-    gap: 10,
-    marginTop: 4,
+    gap: 12,
+    marginTop: 2,
   },
   categoryLabel: {
     fontFamily: fonts.bodyThin,
-    fontSize: type.caption,
-    letterSpacing: 1,
-    color: colors.onInk,
+    fontSize: 10,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    color: shelf.muted,
   },
   categories: {
     flexDirection: 'row',
@@ -935,74 +958,82 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     height: 36,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(244, 239, 230, 0.3)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: shelf.hairline,
+    backgroundColor: shelf.card,
   },
   chipSelected: {
-    borderColor: colors.paper,
-    backgroundColor: colors.paper,
+    borderColor: shelf.ink,
+    backgroundColor: shelf.ink,
   },
   chipAdd: {
     borderStyle: 'dashed',
-    paddingLeft: 10,
+    borderWidth: 1,
+    borderColor: shelf.faint,
+    backgroundColor: 'transparent',
+    paddingLeft: 12,
   },
   chipText: {
     fontFamily: fonts.bodyThin,
-    fontSize: 13,
-    color: colors.onInk,
+    fontSize: 14,
+    color: shelf.ink,
   },
   chipTextSelected: {
     fontFamily: fonts.bodyBold,
-    color: colors.ink,
+    color: shelf.card,
   },
   choice: {
     flexDirection: 'row',
     alignSelf: 'stretch',
     padding: 4,
     gap: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(244, 239, 230, 0.08)',
+    borderRadius: 16,
+    backgroundColor: shelf.card,
+    boxShadow: CARD_SHADOW,
   },
   choiceOption: {
     flex: 1,
-    height: 40,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 9,
+    borderRadius: 12,
   },
   choiceSelected: {
-    backgroundColor: colors.paper,
+    backgroundColor: shelf.ink,
   },
   choiceText: {
     fontFamily: fonts.bodyThin,
     fontSize: type.body,
-    color: colors.onInk,
+    color: shelf.ink,
   },
   choiceTextSelected: {
     fontFamily: fonts.bodyBold,
-    color: colors.ink,
+    color: shelf.card,
   },
   paperGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginTop: 6,
+    marginTop: 8,
   },
+  // Kâğıt örnekleri beyaz kartta ince bir kenar çizgisiyle belli olur
   paperTile: {
     alignItems: 'center',
     gap: 8,
-    padding: 6,
-    paddingTop: 8,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: 'rgba(244, 239, 230, 0.12)',
+    padding: 8,
+    paddingTop: 12,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: shelf.hairline,
+    backgroundColor: shelf.card,
+    boxShadow: CARD_SHADOW,
   },
   paperName: {
     fontFamily: fonts.bodyBold,
     fontSize: 13,
-    color: colors.onInk,
+    color: shelf.ink,
   },
   yearRow: {
     flexDirection: 'row',
@@ -1016,15 +1047,16 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(244, 239, 230, 0.25)',
+    backgroundColor: shelf.card,
+    boxShadow: CARD_SHADOW,
   },
   year: {
     minWidth: 120,
     textAlign: 'center',
     fontFamily: fonts.displayBold,
     fontSize: type.display,
-    color: colors.onInk,
+    letterSpacing: -1,
+    color: shelf.ink,
   },
   checkRow: {
     flexDirection: 'row',
@@ -1039,29 +1071,28 @@ const styles = StyleSheet.create({
   checkLabel: {
     fontFamily: fonts.bodyBold,
     fontSize: type.body,
-    color: colors.onInk,
+    color: shelf.ink,
   },
   checkLabelFixed: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
   summary: {
     gap: 4,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(244, 239, 230, 0.3)',
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: shelf.card,
+    boxShadow: CARD_SHADOW,
   },
   summaryTitle: {
     fontFamily: fonts.bodyBold,
     fontSize: type.body,
-    color: colors.onInk,
+    color: shelf.ink,
   },
   summaryText: {
     fontFamily: fonts.bodyThin,
     fontSize: 13,
     lineHeight: 19,
-    color: colors.onInk,
+    color: shelf.muted,
   },
   footer: {
     flexDirection: 'row',
@@ -1072,26 +1103,32 @@ const styles = StyleSheet.create({
   },
   button: {
     height: 54,
-    borderRadius: 14,
+    borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primary: {
     flex: 2,
-    backgroundColor: colors.accent,
+    backgroundColor: shelf.ink,
+    boxShadow: '0px 8px 18px rgba(22, 22, 26, 0.22)',
   },
   secondary: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: 'rgba(244, 239, 230, 0.35)',
+    backgroundColor: shelf.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: shelf.hairline,
+    boxShadow: CARD_SHADOW,
   },
   disabled: {
-    opacity: 0.4,
+    opacity: 0.35,
   },
   buttonText: {
     fontFamily: fonts.bodyBold,
     fontSize: type.body,
     letterSpacing: 1,
-    color: colors.onInk,
+    color: shelf.card,
+  },
+  secondaryText: {
+    color: shelf.ink,
   },
 })

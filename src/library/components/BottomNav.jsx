@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { StickyNoteIcon } from './StickyNoteIcon'
 import { getLastNotebook } from '../lib/notebookState'
-import { colors, fonts, type } from '../theme'
+import { colors, fonts, shelf, type } from '../theme'
 
 // Not sayfası dışındaki ekranların altındaki gezinme çubuğu. Pano, takvim ve ayraçlar web'deki
 // all-books gibi sonraki fazlarda gelir (şimdilik kapalı, "Yakında").
@@ -61,10 +61,10 @@ function NavItem({ icon, label, hint, selected = false, disabled = false, onPres
       <View style={[styles.indicator, selected && styles.indicatorOn]} />
       {icon === 'sticky' ? (
         <View style={dim}>
-          <StickyNoteIcon size={24} color={colors.onInk} filled={selected} />
+          <StickyNoteIcon size={24} color={shelf.ink} filled={selected} />
         </View>
       ) : (
-        <Ionicons name={selected ? icon : `${icon}-outline`} size={24} color={colors.onInk} style={dim} />
+        <Ionicons name={selected ? icon : `${icon}-outline`} size={24} color={shelf.ink} style={dim} />
       )}
       <Text
         style={[styles.label, selected ? styles.labelOn : dim]}
@@ -79,10 +79,14 @@ function NavItem({ icon, label, hint, selected = false, disabled = false, onPres
 }
 
 const styles = StyleSheet.create({
+  // Kitaplığın açık temasında beyaz çubuk; üstünde ince bir çizgi ve yukarı düşen hafif gölge
   bar: {
     flexDirection: 'row',
     paddingHorizontal: 8,
-    backgroundColor: colors.ink,
+    backgroundColor: shelf.card,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: shelf.hairline,
+    boxShadow: '0px -6px 18px rgba(40, 32, 24, 0.05)',
   },
   item: {
     flex: 1,
@@ -92,12 +96,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   pressed: {
-    backgroundColor: 'rgba(244, 239, 230, 0.12)',
+    backgroundColor: shelf.pressed,
   },
   indicator: {
     width: 28,
     height: 3,
-    marginBottom: 5,
+    marginBottom: 6,
     borderBottomLeftRadius: 3,
     borderBottomRightRadius: 3,
   },
@@ -105,16 +109,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   disabled: {
-    opacity: 0.3,
+    opacity: 0.28,
   },
   dim: {
-    opacity: 0.55,
+    opacity: 0.5,
   },
   label: {
     fontFamily: fonts.bodyThin,
     fontSize: type.caption,
     letterSpacing: 0.5,
-    color: colors.onInk,
+    color: shelf.ink,
   },
   labelOn: {
     fontFamily: fonts.bodyBold,

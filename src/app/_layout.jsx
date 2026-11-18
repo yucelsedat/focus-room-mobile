@@ -19,6 +19,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {})
 // Kitaplık ve defter ekranları seyir defterindeki gibi dikeydir (tam ekran resim görünümü kilidi
 // kendisi açar).
 const FREE_ORIENTATION = /^\/(worlds|room)(\/|$)/
+// Kitaplığın açık temasındaki ekranlar (ana sayfa, defter oluşturma ve düzenleme)
+const LIGHT_SCREENS = /^\/($|new-notebook|edit-notebook\/)/
 
 export default function RootLayout() {
   // Yalnızca kullanılan ağırlıklar: paket index'leri tüm varyantları (≈90 TTF) pakete sokar
@@ -58,7 +60,8 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        {/* Kitaplığın ve defter formunun açık zemininde durum çubuğu koyu, öbür ekranlarda açık */}
+        <StatusBar style={LIGHT_SCREENS.test(pathname) ? 'dark' : 'light'} />
         <Stack
           screenOptions={{
             headerShown: false,
@@ -67,9 +70,9 @@ export default function RootLayout() {
           }}
         >
           {/* Ana sayfa: Seyir Defteri kitaplığı (web'deki all-books gibi). Odalar /worlds'te. */}
-          <Stack.Screen name="index" options={{ contentStyle: { backgroundColor: '#14213D' } }} />
-          <Stack.Screen name="new-notebook" options={{ contentStyle: { backgroundColor: '#14213D' } }} />
-          <Stack.Screen name="edit-notebook/[id]" options={{ contentStyle: { backgroundColor: '#14213D' } }} />
+          <Stack.Screen name="index" options={{ contentStyle: { backgroundColor: '#F3F2EF' } }} />
+          <Stack.Screen name="new-notebook" options={{ contentStyle: { backgroundColor: '#F3F2EF' } }} />
+          <Stack.Screen name="edit-notebook/[id]" options={{ contentStyle: { backgroundColor: '#F3F2EF' } }} />
           <Stack.Screen name="notebook" options={{ contentStyle: { backgroundColor: '#14213D' }, animationDuration: 200 }} />
           <Stack.Screen name="worlds" />
           <Stack.Screen name="room" options={{ gestureEnabled: false }} />
