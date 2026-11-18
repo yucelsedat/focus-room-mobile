@@ -4,7 +4,7 @@ import { Alert, StyleSheet, View } from 'react-native'
 
 import { NotebookForm } from '../../library/components/NotebookForm'
 import { getNotebook, updateNotebook } from '../../library/db'
-import { colors } from '../../library/theme'
+import { shelf } from '../../library/theme'
 
 // Defterin adını, kapağını, kategorisini ve (not defterinde) kâğıdını değiştirme; form, defter okunduktan sonra
 // eski haliyle açılır
@@ -45,6 +45,6 @@ export default function EditNotebookScreen() {
 const styles = StyleSheet.create({
   loading: {
     flex: 1,
-    backgroundColor: colors.ink,
+    backgroundColor: shelf.wall,
   },
 })

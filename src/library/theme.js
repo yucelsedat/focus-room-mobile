@@ -105,12 +105,22 @@ export const docPageDark = {
   check: '#3FB950',
 }
 
-// Kitaplık: koyu ceviz arka duvar, açık kenarlı ahşap raflar
+// Kitaplık (ana sayfa): kırık beyaz duvar, üstünde yumuşak gölgeli saf beyaz raflar; yazılar
+// neredeyse siyah, dergi sayfası gibi sade
 export const shelf = {
-  wall: '#2B2620',
-  wood: '#7A5435',
-  woodTop: '#A0714A',
-  woodEdge: '#563A24',
+  wall: '#F3F2EF',
+  // Rafın önden görünen yüzü, yukarıdan görünen ince üst yüzü ve alt kenarındaki çizgi
+  plank: '#FFFFFF',
+  plankTop: '#F8F7F4',
+  plankEdge: '#E6E3DD',
+  // Duvara düşen gölge
+  shadow: 'rgba(40, 32, 24, 0.16)',
+  ink: '#16161A',
+  muted: '#8B877F',
+  faint: '#B9B5AD',
+  card: '#FFFFFF',
+  hairline: '#E9E6E0',
+  pressed: 'rgba(22, 22, 26, 0.06)',
 }
 
 // Pano: koyu ceviz çerçeve içinde mantar; benekler mantarın açık ve koyu taneleri
@@ -147,6 +157,17 @@ export const bookColors = {
   mustard: { name: 'Hardal', cover: '#C9962B', band: '#14213D' },
   sand: { name: 'Kum', cover: '#D8C7A3', band: '#7A1F2B' },
   charcoal: { name: 'Kömür', cover: '#2E2E30', band: '#C8553D' },
+  // Canlı kapaklar: grafik tasarım kitapları gibi parlak renkler. Bant rengi, PDF etiketindeki
+  // yazının (kapak renginde) üstünde okunacak biçimde seçildi.
+  coral: { name: 'Mercan', cover: '#FF5A4E', band: '#16161A' },
+  tangerine: { name: 'Mandalina', cover: '#FF8A1F', band: '#16161A' },
+  lemon: { name: 'Limon', cover: '#F6CF2F', band: '#2346D9' },
+  mint: { name: 'Nane', cover: '#34C38F', band: '#16161A' },
+  teal: { name: 'Camgöbeği', cover: '#0E9AA7', band: '#FFFFFF' },
+  sky: { name: 'Gök mavisi', cover: '#4BA8F5', band: '#16161A' },
+  cobalt: { name: 'Kobalt', cover: '#2346D9', band: '#F6CF2F' },
+  lilac: { name: 'Leylak', cover: '#9B7BFF', band: '#16161A' },
+  magenta: { name: 'Fuşya', cover: '#E83E8C', band: '#FFFFFF' },
 }
 
 export const DEFAULT_BOOK_COLOR = 'ink'

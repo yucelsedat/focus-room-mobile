@@ -110,7 +110,7 @@ function FileCover({ width, height, color, band, children }) {
     <View style={styles.file}>
       <Svg style={StyleSheet.absoluteFill} width={width + 4} height={height + 5} pointerEvents="none">
         {/* Gölge: gövdenin biraz sağa ve aşağı kaymış koyu kopyası */}
-        <Path d={body} fill="rgba(0, 0, 0, 0.4)" translateX={3} translateY={4} />
+        <Path d={body} fill="rgba(30, 24, 18, 0.16)" translateX={2} translateY={4} />
         <Path d={body} fill={color} />
         <Path d={corner} fill="rgba(255, 255, 255, 0.42)" />
         <Path d={corner} fill="none" stroke="rgba(0, 0, 0, 0.18)" strokeWidth={1} />
@@ -227,7 +227,8 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 2,
     borderTopRightRadius: 5,
     borderBottomRightRadius: 5,
-    boxShadow: '3px 4px 8px rgba(0, 0, 0, 0.45)',
+    // Açık rafta kapağın gölgesi yumuşak ve geniş; sağa ve aşağı düşer
+    boxShadow: '2px 5px 10px rgba(30, 24, 18, 0.22), 0px 1px 2px rgba(30, 24, 18, 0.18)',
   },
   // Telli defterin kapağı sırtsız; köşeleri iki yanda da yuvarlak
   spiralCover: {

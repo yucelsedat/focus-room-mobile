@@ -29,7 +29,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
-    boxShadow: '0px 6px 12px rgba(0, 0, 0, 0.5)',
+    boxShadow: '0px 10px 22px rgba(200, 85, 61, 0.35), 0px 2px 6px rgba(40, 32, 24, 0.15)',
   },
   fabPressed: {
     transform: [{ scale: 0.94 }],

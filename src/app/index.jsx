@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Keyboard, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 import { discoverServer } from '../api/discovery'
@@ -10,7 +10,8 @@ import { Bookshelf } from '../library/components/Bookshelf'
 import { BottomNav } from '../library/components/BottomNav'
 import { CategoryManager } from '../library/components/CategoryManager'
 import { CategoryTabs } from '../library/components/CategoryTabs'
-import { TornPaperMenu } from '../library/components/TornPaperMenu'
+import { SearchBar } from '../library/components/SearchBar'
+import { SoftMenu } from '../library/components/SoftMenu'
 import {
   deleteNotebook,
   GENERAL_CATEGORY_ID,
@@ -20,14 +21,20 @@ import {
   setNotebookShelves,
 } from '../library/db'
 import { forgetNotebook } from '../library/lib/notebookState'
-import { DEFAULT_SHELF_COUNT, settleOverflow } from '../library/lib/shelves'
-import { colors, fonts, HAND_TAIL, handTailWidth, shelf, type } from '../library/theme'
+import { BOOKS_PER_SHELF, DEFAULT_SHELF_COUNT, settleOverflow } from '../library/lib/shelves'
+import { colors, fonts, shelf, type } from '../library/theme'
+
+// Aramada büyük küçük harf ve Türkçe harfler (İ/i, I/ı) ayırt edilmez
+function normalize(text) {
+  return (text ?? '').toLocaleLowerCase('tr').trim()
+}
 
 // Ana sayfa: defterlerin raflarda durduğu kitaplıklar. Her kategorinin kendi kitaplığı vardır;
 // kitaplıklar yan yana durur, sola sağa kaydırınca ya da başlığın altındaki sekmelerden birine
 // basınca öbür kategoriye geçilir (açılışta Genel). Kitaplığın rafları aşağı doğru uzar, aşağı
-// yukarı kaydırılır. Sağ üstteki kalemle düzenlemeye geçilir; düzenlerken defterler basılı tutulup
-// sürüklenerek yer değiştirir.
+// yukarı kaydırılır. Soldaki menüden odalara, kategorilere ve düzenlemeye gidilir; düzenlerken
+// defterler basılı tutulup sürüklenerek yer değiştirir. Arama çubuğu defterleri adına göre süzer,
+// filtresi kategori seçtirir.
 export default function LibraryScreen() {
   const pagerRef = useRef(null)
   const shelfRefs = useRef(new Map())
@@ -41,6 +48,10 @@ export default function LibraryScreen() {
   const [selected, setSelected] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuMode, setMenuMode] = useState('main')
+  // Başlıktaki menü ve arama çubuğunun filtresi (kategori seçimi)
+  const [sheet, setSheet] = useState(null)
+  const [query, setQuery] = useState('')
+  const searching = normalize(query).length > 0
   // Kitaplıkların yan yana durduğu alanın eni; her kitaplık bu kadar yer kaplar
   const [pageWidth, setPageWidth] = useState(0)
   // Bir defter sürüklenirken kitaplıklar arasında geçilmez
@@ -136,6 +147,8 @@ export default function LibraryScreen() {
   // Her kategorinin kitaplığı: defterleri raf raf, her rafta soldan sağa. Kitaplık en az
   // DEFAULT_SHELF_COUNT raftır; düzenlerken en alttaki dolu rafın altında hep boş bir raf olur ki
   // defter oraya da konabilsin.
+  // Ararken yalnız adı aranan yazıyı içeren defterler kalır; boşluk kalmasın diye raf sırasıyla
+  // baştan dizilirler (yerleri kaydedilmez, ararken düzenlenmez).
   const library = useMemo(() => {
     const result = new Map()
     for (const category of categories) result.set(category.id, [])
@@ -143,14 +156,28 @@ export default function LibraryScreen() {
       const shelves = result.get(notebook.category_id)
       if (shelves) (shelves[notebook.shelf] ??= []).push(notebook)
     }
+    const needle = normalize(query)
     for (const [id, shelves] of result) {
+      for (const books of shelves) books?.sort((a, b) => a.position - b.position || a.id - b.id)
+      if (needle) {
+        const found = shelves.flatMap((books) => books ?? []).filter((b) => normalize(b.title).includes(needle))
+        const packed = []
+        for (let i = 0; i < found.length; i += BOOKS_PER_SHELF) packed.push(found.slice(i, i + BOOKS_PER_SHELF))
+        const length = Math.max(DEFAULT_SHELF_COUNT, packed.length)
+        result.set(
+          id,
+          Array.from({ length }, (_, i) => packed[i] ?? []),
+        )
+        continue
+      }
       const length = Math.max(DEFAULT_SHELF_COUNT, shelves.length + (editing ? 1 : 0))
-      const full = Array.from({ length }, (_, i) => shelves[i] ?? [])
-      for (const books of full) books.sort((a, b) => a.position - b.position || a.id - b.id)
-      result.set(id, full)
+      result.set(
+        id,
+        Array.from({ length }, (_, i) => shelves[i] ?? []),
+      )
     }
     return result
-  }, [notebooks, categories, editing])
+  }, [notebooks, categories, editing, query])
   const visibleCount = (library.get(activeId) ?? []).reduce((sum, books) => sum + books.length, 0)
 
   // Yalnızca defterin kendi kategorisindeki defterlerin yeri değişir. Dolu rafa giren defter
@@ -182,6 +209,7 @@ export default function LibraryScreen() {
   }
 
   function select(notebook) {
+    Keyboard.dismiss()
     setMenuMode('main')
     setSelected(notebook)
     setMenuOpen(true)
@@ -208,8 +236,8 @@ export default function LibraryScreen() {
   const menuOptions =
     menuMode === 'delete'
       ? [
-          { label: 'Evet, sil', danger: true, onPress: removeSelected },
-          { label: 'Vazgeç', onPress: () => setMenuMode('main') },
+          { label: 'Evet, sil', icon: 'trash-outline', danger: true, onPress: removeSelected },
+          { label: 'Vazgeç', icon: 'arrow-undo-outline', onPress: () => setMenuMode('main') },
         ]
       : menuMode === 'category'
         ? categories.map((category) => ({
@@ -218,9 +246,10 @@ export default function LibraryScreen() {
             onPress: () => moveSelectedTo(category.id),
           }))
         : [
-            { label: 'Aç', onPress: andClose(openNotebook) },
+            { label: 'Aç', icon: 'book-outline', onPress: andClose(openNotebook) },
             {
               label: 'Düzenle',
+              icon: 'create-outline',
               onPress: andClose((notebook) =>
                 router.push({
                   pathname: '/edit-notebook/[id]',
@@ -228,8 +257,10 @@ export default function LibraryScreen() {
                 }),
               ),
             },
-            ...(categories.length > 1 ? [{ label: 'Kategori', onPress: () => setMenuMode('category') }] : []),
-            { label: 'Sil', danger: true, onPress: () => setMenuMode('delete') },
+            ...(categories.length > 1
+              ? [{ label: 'Kategori', icon: 'pricetag-outline', onPress: () => setMenuMode('category') }]
+              : []),
+            { label: 'Sil', icon: 'trash-outline', danger: true, onPress: () => setMenuMode('delete') },
           ]
 
   const menuTitle =
@@ -239,43 +270,104 @@ export default function LibraryScreen() {
         ? 'Hangi kategoride?'
         : (selected?.title ?? '')
 
-  // Yeri değişecek en az iki defter olunca düzenlenebilir
-  const canEdit = editing || visibleCount > 1
+  // Yeri değişecek en az iki defter olunca düzenlenebilir; ararken raflar süzülmüş olduğundan
+  // düzenlenmez
+  const canEdit = editing || (visibleCount > 1 && !searching)
+
+  function search(text) {
+    if (text && editing) setEditing(false)
+    setQuery(text)
+  }
+
+  function openSheet(kind) {
+    Keyboard.dismiss()
+    setSheet(kind)
+  }
+
+  // Menüden bir şey seçilince menü kapanır
+  function fromSheet(action) {
+    return () => {
+      setSheet(null)
+      action()
+    }
+  }
+
+  const sheetOptions =
+    sheet === 'filter'
+      ? [
+          ...categories.map((category) => ({
+            label: `${category.name}  ·  ${counts.get(category.id) ?? 0}`,
+            checked: category.id === activeId,
+            onPress: fromSheet(() => selectCategory(category.id)),
+          })),
+          { label: 'Kategorileri düzenle', icon: 'pricetags-outline', onPress: fromSheet(() => setManaging(true)) },
+        ]
+      : [
+          {
+            label: 'Yeni defter',
+            icon: 'add',
+            disabled: connection !== 'ok',
+            onPress: fromSheet(() =>
+              router.push({ pathname: '/new-notebook', params: { category: String(activeId) } }),
+            ),
+          },
+          {
+            label: editing ? 'Düzenlemeyi bitir' : 'Rafları düzenle',
+            icon: editing ? 'checkmark' : 'swap-horizontal',
+            disabled: !canEdit,
+            onPress: fromSheet(() => setEditing((on) => !on)),
+          },
+          { label: 'Kategoriler', icon: 'pricetags-outline', onPress: fromSheet(() => setManaging(true)) },
+          { label: 'Odalar', icon: 'cube-outline', onPress: fromSheet(() => router.push('/worlds')) },
+        ]
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        {/* Kitaplıktan 3B odalara (eski ana sayfa) */}
         <Pressable
-          onPress={() => router.push('/worlds')}
+          onPress={() => openSheet('menu')}
           accessibilityRole="button"
-          accessibilityLabel="Odalar"
-          accessibilityHint="3B odalara gider"
+          accessibilityLabel="Menü"
+          accessibilityHint="Yeni defter, rafları düzenleme, kategoriler ve odalar"
           hitSlop={8}
           style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
         >
-          <Ionicons name="cube-outline" size={22} color={colors.onInk} style={styles.roomsIcon} />
+          <Ionicons name="menu" size={26} color={shelf.ink} />
         </Pressable>
         <View style={styles.headerText}>
-          <Text style={styles.title}>Kitaplık</Text>
-          {editing && <Text style={styles.subtitle}>Basılı tut, sürükle</Text>}
+          <Text style={styles.title} accessibilityRole="header">
+            Kitaplık
+          </Text>
+          <Text style={styles.subtitle}>{editing ? 'BASILI TUT, SÜRÜKLE' : 'SEYİR DEFTERİ'}</Text>
         </View>
-        <Pressable
-          onPress={() => setEditing((on) => !on)}
-          disabled={!canEdit}
-          accessibilityRole="button"
-          accessibilityLabel={editing ? 'Düzenlemeyi bitir' : 'Kitaplığı düzenle'}
-          accessibilityHint={editing ? undefined : 'Defterlerin yerini sürükleyerek değiştir'}
-          hitSlop={8}
-          style={({ pressed }) => [
-            styles.headerButton,
-            pressed && styles.headerButtonPressed,
-            !canEdit && styles.headerButtonDisabled,
-          ]}
-        >
-          <Ionicons name={editing ? 'checkmark' : 'create-outline'} size={24} color={colors.onInk} />
-        </Pressable>
+        {editing ? (
+          <Pressable
+            onPress={() => setEditing(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Düzenlemeyi bitir"
+            hitSlop={8}
+            style={({ pressed }) => [styles.doneButton, pressed && styles.doneButtonPressed]}
+          >
+            <Ionicons name="checkmark" size={22} color={shelf.card} />
+          </Pressable>
+        ) : (
+          // Profil henüz yok; alt çubuktaki Pano / Takvim gibi "yakında"
+          <View
+            style={styles.avatar}
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel="Profil, yakında"
+          >
+            <Ionicons name="person" size={20} color={shelf.card} />
+          </View>
+        )}
       </View>
+      <SearchBar
+        value={query}
+        onChange={search}
+        onFilter={() => openSheet('filter')}
+        filterActive={activeId !== GENERAL_CATEGORY_ID}
+      />
       <CategoryTabs
         categories={categories}
         activeId={activeId}
@@ -312,11 +404,13 @@ export default function LibraryScreen() {
                   >
                     {empty && (
                       <View style={styles.empty} pointerEvents="none">
-                        <Text style={styles.emptyTitle}>{'Bu raflar boş' + HAND_TAIL}</Text>
+                        <Text style={styles.emptyTitle}>{searching ? 'Sonuç yok' : 'Bu raflar boş'}</Text>
                         <Text style={styles.emptyText}>
-                          {(category.id === GENERAL_CATEGORY_ID
-                            ? 'Yeni bir defter ekle'
-                            : 'Yeni defter ekle ya da bir defteri bu kategoriye taşı') + HAND_TAIL}
+                          {searching
+                            ? `“${query.trim()}” adlı bir defter bu kategoride yok`
+                            : category.id === GENERAL_CATEGORY_ID
+                              ? 'Yeni bir defter ekle'
+                              : 'Yeni defter ekle ya da bir defteri bu kategoriye taşı'}
                         </Text>
                       </View>
                     )}
@@ -329,15 +423,15 @@ export default function LibraryScreen() {
           <View style={styles.offline}>
             {connection === 'searching' ? (
               <>
-                <ActivityIndicator color={colors.onInk} />
-                <Text style={styles.offlineText}>{'Sunucu aranıyor…' + HAND_TAIL}</Text>
+                <ActivityIndicator color={shelf.ink} />
+                <Text style={styles.offlineText}>Sunucu aranıyor…</Text>
               </>
             ) : (
               <>
-                <Text style={styles.emptyTitle}>{'Sunucuya ulaşılamadı' + HAND_TAIL}</Text>
+                <Text style={styles.emptyTitle}>Sunucuya ulaşılamadı</Text>
                 <Text style={styles.emptyText}>
-                  {'Defterler bilgisayardaki Focus Room sunucusunda durur. Sunucu çalışıyor mu, telefon aynı Wi-Fi ağında mı?' +
-                    HAND_TAIL}
+                  Defterler bilgisayardaki Focus Room sunucusunda durur. Sunucu çalışıyor mu, telefon aynı
+                  Wi-Fi ağında mı?
                 </Text>
                 <View style={styles.offlineButtons}>
                   <Pressable
@@ -369,7 +463,14 @@ export default function LibraryScreen() {
         )}
       </View>
       <BottomNav active="library" onReselect={() => shelfRefs.current.get(activeId)?.scrollToTop(true)} />
-      <TornPaperMenu
+      <SoftMenu
+        visible={sheet !== null}
+        title={sheet === 'filter' ? 'Kategori' : 'Kitaplık'}
+        message={sheet === 'filter' ? 'Hangi rafları görmek istersin?' : undefined}
+        options={sheetOptions}
+        onClose={() => setSheet(null)}
+      />
+      <SoftMenu
         visible={menuOpen}
         title={menuTitle}
         message={
@@ -398,14 +499,14 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: colors.ink,
+    backgroundColor: shelf.wall,
   },
   header: {
-    height: 64,
+    height: 72,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    paddingHorizontal: 14,
   },
   headerText: {
     alignItems: 'center',
@@ -418,30 +519,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerButtonPressed: {
-    backgroundColor: 'rgba(244, 239, 230, 0.15)',
-  },
-  headerButtonDisabled: {
-    opacity: 0.25,
-  },
-  roomsIcon: {
-    opacity: 0.7,
+    backgroundColor: shelf.pressed,
   },
   title: {
     fontFamily: fonts.displayBold,
-    fontSize: type.title,
-    color: colors.onInk,
+    fontSize: 30,
+    letterSpacing: -0.6,
+    color: shelf.ink,
   },
   subtitle: {
+    marginTop: -2,
     fontFamily: fonts.bodyThin,
-    fontSize: type.caption,
-    letterSpacing: 1.5,
-    color: colors.onInk,
+    fontSize: 10,
+    letterSpacing: 3,
+    color: shelf.muted,
+  },
+  // Profil simgesi: koyu zeminde beyaz kişi, ince beyaz halka ve yumuşak gölge
+  avatar: {
+    width: 40,
+    height: 40,
+    marginRight: 2,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2A2A30',
+    borderWidth: 2,
+    borderColor: shelf.card,
+    boxShadow: '0px 4px 10px rgba(40, 32, 24, 0.18)',
+  },
+  doneButton: {
+    width: 40,
+    height: 40,
+    marginRight: 2,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    boxShadow: '0px 4px 10px rgba(200, 85, 61, 0.35)',
+  },
+  doneButtonPressed: {
+    transform: [{ scale: 0.94 }],
   },
   wall: {
     flex: 1,
+    marginTop: 2,
     backgroundColor: shelf.wall,
   },
-  // Boş kategoride rafların ortasında tebeşirle yazılmış gibi bir not
+  // Boş kategoride rafların ortasında sade bir not
   empty: {
     position: 'absolute',
     top: 0,
@@ -451,27 +575,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 40,
-    gap: 4,
+    gap: 6,
   },
   emptyTitle: {
-    fontFamily: fonts.handBold,
-    fontSize: 34,
-    color: colors.onInk,
-    marginRight: -handTailWidth(34),
+    fontFamily: fonts.displayThin,
+    fontSize: type.display,
+    letterSpacing: -0.8,
+    color: shelf.ink,
+  },
+  emptyText: {
+    fontFamily: fonts.bodyThin,
+    fontSize: type.body,
+    lineHeight: 22,
+    textAlign: 'center',
+    color: shelf.muted,
   },
   offline: {
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 40,
-    gap: 8,
+    gap: 10,
     backgroundColor: shelf.wall,
   },
   offlineText: {
-    fontFamily: fonts.hand,
-    fontSize: 24,
-    color: colors.onInk,
-    marginRight: -handTailWidth(24),
+    fontFamily: fonts.bodyThin,
+    fontSize: type.body,
+    letterSpacing: 0.5,
+    color: shelf.muted,
   },
   offlineButtons: {
     flexDirection: 'row',
@@ -480,21 +611,17 @@ const styles = StyleSheet.create({
   },
   offlineButton: {
     paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: 'rgba(244, 239, 230, 0.5)',
+    backgroundColor: shelf.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: shelf.hairline,
+    boxShadow: '0px 4px 12px rgba(40, 32, 24, 0.08)',
   },
   offlineButtonText: {
     fontFamily: fonts.bodyBold,
     fontSize: type.caption,
-    color: colors.onInk,
-  },
-  emptyText: {
-    fontFamily: fonts.hand,
-    fontSize: 21,
-    textAlign: 'center',
-    color: 'rgba(244, 239, 230, 0.75)',
-    marginRight: -handTailWidth(21),
+    letterSpacing: 0.5,
+    color: shelf.ink,
   },
 })

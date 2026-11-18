@@ -2,10 +2,10 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import { useEffect, useRef } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 
-import { colors, fonts, type } from '../theme'
+import { fonts, shelf, type } from '../theme'
 
-// Kitaplığın başlığının altındaki sekmeler: her kategori kendi raflarını gösterir. Sekmeler yana
-// kayar; ayar simgesi sağda sabit durur.
+// Arama çubuğunun altındaki sekmeler: her kategori kendi raflarını gösterir. Sekmeler yana kayan
+// hap biçimli etiketlerdir, seçili olan koyu dolgulu; etiket simgesi sağda sabit durur.
 export function CategoryTabs({ categories, activeId, counts, onSelect, onManage }) {
   const scrollRef = useRef(null)
   // Sekmelerin yatay konumu; seçilen sekme görünür alana kaydırılır
@@ -45,12 +45,16 @@ export function CategoryTabs({ categories, activeId, counts, onSelect, onManage 
               accessibilityRole="tab"
               accessibilityState={{ selected }}
               accessibilityLabel={`${category.name}, ${count} defter`}
-              style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.tab, pressed && styles.tabPressed]}
             >
-              <Text style={[styles.tabText, selected && styles.tabTextSelected]} numberOfLines={1}>
-                {category.name}
-              </Text>
-              <View style={[styles.indicator, selected && styles.indicatorOn]} />
+              <View style={[styles.pill, selected && styles.pillOn]}>
+                <Text style={[styles.tabText, selected && styles.tabTextSelected]} numberOfLines={1}>
+                  {category.name}
+                </Text>
+                {count > 0 && (
+                  <Text style={[styles.count, selected && styles.countOn]}>{count}</Text>
+                )}
+              </View>
             </Pressable>
           )
         })}
@@ -63,7 +67,7 @@ export function CategoryTabs({ categories, activeId, counts, onSelect, onManage 
         hitSlop={4}
         style={({ pressed }) => [styles.manage, pressed && styles.pressed]}
       >
-        <Ionicons name="pricetags-outline" size={20} color={colors.onInk} />
+        <Ionicons name="pricetags-outline" size={19} color={shelf.ink} />
       </Pressable>
     </View>
   )
@@ -71,53 +75,64 @@ export function CategoryTabs({ categories, activeId, counts, onSelect, onManage 
 
 const styles = StyleSheet.create({
   bar: {
-    height: 44,
+    height: 52,
     flexDirection: 'row',
-    alignItems: 'stretch',
-    backgroundColor: colors.ink,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(244, 239, 230, 0.18)',
+    alignItems: 'center',
   },
   tabs: {
-    paddingHorizontal: 10,
-    gap: 4,
+    paddingLeft: 20,
+    paddingRight: 8,
+    gap: 8,
+    alignItems: 'center',
   },
   tab: {
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    borderRadius: 18,
   },
-  pressed: {
-    backgroundColor: 'rgba(244, 239, 230, 0.12)',
+  tabPressed: {
+    opacity: 0.6,
+  },
+  pill: {
+    height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: shelf.hairline,
+    backgroundColor: shelf.card,
+  },
+  pillOn: {
+    borderColor: shelf.ink,
+    backgroundColor: shelf.ink,
   },
   tabText: {
     fontFamily: fonts.bodyThin,
-    fontSize: type.body,
-    letterSpacing: 0.3,
-    color: colors.onInk,
+    fontSize: 14,
+    letterSpacing: 0.2,
+    color: shelf.ink,
   },
   tabTextSelected: {
     fontFamily: fonts.bodyBold,
+    color: shelf.card,
   },
-  // Seçili sekmenin altında kapaktaki lastik bant gibi kiremit bir şerit
-  indicator: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 0,
-    height: 3,
-    borderTopLeftRadius: 2,
-    borderTopRightRadius: 2,
-    backgroundColor: 'transparent',
+  count: {
+    fontFamily: fonts.bodyBold,
+    fontSize: type.caption,
+    color: shelf.faint,
   },
-  indicatorOn: {
-    backgroundColor: colors.accent,
+  countOn: {
+    color: 'rgba(255, 255, 255, 0.55)',
   },
   manage: {
-    width: 48,
+    width: 44,
+    height: 36,
+    marginRight: 12,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: 'rgba(244, 239, 230, 0.18)',
+  },
+  pressed: {
+    backgroundColor: shelf.pressed,
   },
 })

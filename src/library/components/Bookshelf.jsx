@@ -21,7 +21,9 @@ const SIDE = 24
 const GAP = 18
 // Rafın kalınlığı ve kitabın üstünde kalan boşluk
 const PLANK = 16
-const HEADROOM = 24
+// Rafın yukarıdan görünen üst yüzü; kitaplar bunun ortasında durur
+const PLANK_TOP = 5
+const HEADROOM = 28
 // Son rafın oluşturma butonunun üstünde kalması için alttaki boşluk
 const BOTTOM_SPACE = 96
 // Ekranda en az bu kadar raf görünsün; ekran genişse kitaplar buna göre küçülür
@@ -251,7 +253,7 @@ export function Bookshelf({ shelves, editing, onOpen, onSelect, onMove, onDragCh
         {g && (
           <>
             {shelves.map((_, shelf) => (
-              <View key={shelf} style={[styles.plank, { top: (shelf + 1) * g.rowHeight - PLANK }]} />
+              <Plank key={shelf} top={(shelf + 1) * g.rowHeight - PLANK - PLANK_TOP / 2} />
             ))}
             {shelves.map((books, shelf) =>
               books.map((book, index) => (
@@ -274,6 +276,18 @@ export function Bookshelf({ shelves, editing, onOpen, onSelect, onMove, onDragCh
         )}
       </Animated.ScrollView>
       {children}
+    </View>
+  )
+}
+
+// Duvara gömülü saf beyaz raf: yukarıdan görünen ince üst yüz kitapların durduğu yerdir, önden
+// görünen yüzün altında duvara yumuşak, geniş bir gölge düşer
+function Plank({ top }) {
+  return (
+    <View style={[styles.plank, { top }]} pointerEvents="none">
+      <View style={styles.plankShadow} />
+      <View style={styles.plankTop} />
+      <View style={styles.plankFront} />
     </View>
   )
 }
@@ -415,15 +429,35 @@ const styles = StyleSheet.create({
   },
   plank: {
     position: 'absolute',
-    left: 8,
-    right: 8,
+    left: 14,
+    right: 14,
     height: PLANK,
-    borderTopWidth: 4,
-    borderTopColor: shelfColors.woodTop,
-    borderBottomWidth: 3,
-    borderBottomColor: shelfColors.woodEdge,
-    borderRadius: 2,
-    backgroundColor: shelfColors.wood,
-    boxShadow: '0px 8px 10px rgba(0, 0, 0, 0.45)',
+  },
+  // Gölge rafın kendisinden biraz dar başlar, aşağı doğru yayılır
+  plankShadow: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: PLANK_TOP,
+    bottom: 0,
+    borderRadius: 4,
+    backgroundColor: shelfColors.plank,
+    boxShadow: `0px 14px 22px 2px ${shelfColors.shadow}, 0px 3px 5px rgba(40, 32, 24, 0.10)`,
+  },
+  plankTop: {
+    height: PLANK_TOP,
+    marginHorizontal: 3,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+    backgroundColor: shelfColors.plankTop,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: shelfColors.plankEdge,
+  },
+  plankFront: {
+    flex: 1,
+    borderRadius: 3,
+    backgroundColor: shelfColors.plank,
+    borderBottomWidth: 1,
+    borderBottomColor: shelfColors.plankEdge,
   },
 })
